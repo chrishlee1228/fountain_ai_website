@@ -6,13 +6,38 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 import os, time
 from datetime import datetime, timedelta
+import asyncio
 
 # ----- FastAPI + templates/static -----
 app = FastAPI()
 os.makedirs("templates", exist_ok=True)
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
-env = Environment(loader=FileSystemLoader("templates"))
+env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
+
+#automatic refresh code
+WEEK_SECONDS = 7 * 24 * 60 * 60  # one week
+
+@app.on_event("startup")
+async def schedule_weekly_refresh():
+    async def loop_refresh():
+        # warm the cache immediately at boot
+        try:
+            _refresh_congress_cache()
+        except Exception as e:
+            print("Initial refresh failed:", repr(e))
+
+        while True:
+            await asyncio.sleep(WEEK_SECONDS)
+            try:
+                _refresh_congress_cache()
+                print("Weekly refresh completed")
+            except Exception as e:
+                # log but do not crash the app
+                print("Weekly refresh failed:", repr(e))
+
+    asyncio.create_task(loop_refresh())
+
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
@@ -30,6 +55,11 @@ def insights(request: Request):
 @app.get("/api/ping")
 def ping():
     return {"ok": True}
+
+@app.post("/tasks/refresh")
+def force_refresh():
+    _refresh_congress_cache()
+    return {"ok": True, "refreshed_at": datetime.utcnow().isoformat() + "Z"}
 
 # ----- Congress trades scraping & processing -----
 import requests
@@ -105,6 +135,16 @@ def _compute_top_bottom(df: pd.DataFrame, n=10):
         return [{"stock": k, "value": float(v)} for k, v in series.items()]
 
     return {"date_range": date_range, "top10": to_list(top), "bottom10": to_list(bottom)}
+
+# --- refresh helper (put this right below _compute_top_bottom) ---
+def _refresh_congress_cache():
+    """Fetch data, compute top/bottom, and store it in CACHE."""
+    df = _load_congress_trades()
+    payload = _compute_top_bottom(df, n=10)
+    payload["generated_at"] = datetime.utcnow().isoformat() + "Z"
+    CACHE["congress"] = payload
+    CACHE["ts"] = time.time()
+
 
 @app.get("/api/congress/top-bottom")
 def congress_top_bottom():

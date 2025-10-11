@@ -1,6 +1,4 @@
-﻿#   uvicorn app:app --reload
-
-from fastapi import FastAPI, Request
+﻿from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -18,14 +16,6 @@ env = Environment(loader=FileSystemLoader("templates"))
 def home(request: Request):
     # This page will render the congress charts (index.html below)
     return env.get_template("index.html").render()
-
-@app.get("/markets", response_class=HTMLResponse)
-def markets(request: Request):
-    return env.get_template("markets.html").render()
-
-@app.get("/insights", response_class=HTMLResponse)
-def insights(request: Request):
-    return env.get_template("insights.html").render()
 
 @app.get("/api/ping")
 def ping():

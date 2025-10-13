@@ -7,6 +7,8 @@ from jinja2 import Environment, FileSystemLoader
 import os, time
 from datetime import datetime, timedelta
 import asyncio
+from fastapi.templating import Jinja2Templates
+
 
 # ----- FastAPI + templates/static -----
 app = FastAPI()
@@ -14,6 +16,8 @@ os.makedirs("templates", exist_ok=True)
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
+templates = Jinja2Templates(directory="templates")
+
 
 #automatic refresh code
 WEEK_SECONDS = 7 * 24 * 60 * 60  # one week
@@ -41,20 +45,20 @@ async def schedule_weekly_refresh():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    # This page will render the congress charts (index.html below)
-    return env.get_template("index.html").render()
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/portfolio", response_class=HTMLResponse)
 async def portfolio(request: Request):
-    return env.get_template("portfolio.html").render()
+    return templates.TemplateResponse("portfolio.html", {"request": request})
 
 @app.get("/markets", response_class=HTMLResponse)
 def markets(request: Request):
-    return env.get_template("markets.html").render()
+    return templates.TemplateResponse("markets.html", {"request": request})
 
 @app.get("/insights", response_class=HTMLResponse)
 def insights(request: Request):
-    return env.get_template("insights.html").render()
+    return templates.TemplateResponse("insights.html", {"request": request})
+
 
 @app.get("/api/ping")
 def ping():

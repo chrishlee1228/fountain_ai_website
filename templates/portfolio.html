@@ -2,173 +2,170 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Fountain AI - Market Insights</title>
+  <title>Fountain AI - Personalized Portfolio</title>
   <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
-    :root{
-      --bg:#0b1020; --panel:#121832; --text:#e9ecf1; --muted:#aab4cc; --brand:#7cb8ff;
-      --border:rgba(255,255,255,.08);
-    }
-    *{box-sizing:border-box}
-    html,body{height:auto;margin:0}
-    body{background:var(--bg);color:var(--text);font:16px/1.5 system-ui,Segoe UI,Roboto,Arial}
-    a{color:var(--text);text-decoration:none}
-    .wrap{max-width:1200px;margin:0 auto;padding:24px}
-    nav{background:#0b132b;border-bottom:1px solid var(--border)}
+    body{background:#0b1020;color:#e9ecf1;font:16px/1.5 system-ui,Segoe UI,Roboto,Arial;margin:0}
+    a{color:#e9ecf1;text-decoration:none}
+    nav{background:#0b132b;border-bottom:1px solid rgba(255,255,255,.08)}
     .nav-inner{max-width:1200px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
-    .brand{
-      display:flex;
-      align-items:center;
-      font-weight:800;
-      letter-spacing:.3px;
-    }
-    .brand img {
-      height: 28px;        /* adjust logo size */
-      width: auto;
-      margin-right: 8px;   /* space between logo and text */
-      display: block;      /* removes tiny bottom gap */
-      object-fit: contain; /* keeps proportions perfect */
-    }
-
-    .tabs a{opacity:.85;margin-left:18px}
-    .tabs a.active{opacity:1;color:var(--brand)}
-    h1{margin:12px 0 4px}
-    .lead{color:var(--muted);margin:0 0 10px}
-    #stamp{color:var(--muted);font-size:.9rem;margin:6px 0 18px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-    @media (max-width:1000px){ .row{grid-template-columns:1fr} }
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
-    .card h3{margin:6px 0 10px}
-    /* HARD STOP on chart height + avoid resize loops */
+    .brand{display:flex;align-items:center;font-weight:800;letter-spacing:.3px}
+    .brand img{height:28px;width:auto;margin-right:8px;display:block;object-fit:contain}
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    .row{display:grid;grid-template-columns:2fr 1fr;gap:24px}
+    @media (max-width:1100px){ .row{grid-template-columns:1fr} }
+    .card{background:#121832;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
     .chart-box{position:relative;height:420px;overflow:hidden}
     canvas{display:block;width:100% !important;height:100% !important}
-    footer{color:var(--muted);font-size:.9rem;margin-top:20px}
-    button{background:#1a2250;border:1px solid var(--border);border-radius:10px;padding:.45rem .7rem;color:#fff;cursor:pointer}
+    input,button,textarea{background:#1a2250;border:1px solid rgba(255,255,255,.08);border-radius:10px;color:#fff}
+    input,textarea{padding:.55rem .7rem}
+    button{padding:.55rem .8rem;cursor:pointer}
     button:hover{filter:brightness(1.1)}
+    ul.news{list-style:none;padding:0;margin:0}
+    ul.news li{border-bottom:1px solid rgba(255,255,255,.08);padding:10px 0}
+    .muted{color:#aab4cc}
   </style>
 </head>
 <body>
-<!-- Top navigation -->
-<nav>
-  <div class="nav-inner">
-    <div class="brand">
-      <img src="/static/company_logo.png" alt="Fountain AI logo">
-      <span>Fountain AI</span>
+  <nav>
+    <div class="nav-inner">
+      <div class="brand">
+        <img src="/static/company_logo.png" alt="Fountain AI logo"><span>Fountain AI</span>
+      </div>
+      <div class="tabs">
+        <a href="/">Congress Trades</a>
+        <a href="/markets">Market Trends</a>
+        <a href="/insights">AI Insights</a>
+        <a href="/portfolio" class="active">Personalized Portfolio</a>
+      </div>
     </div>
-    <div class="tabs">
-      <a href="/" class="active">Congress Trades</a>
-      <a href="/markets">Market Trends</a>
-      <a href="/insights">AI Insights</a>
-    </div>
-  </div>
-</nav>
-
+  </nav>
 
   <div class="wrap">
-    <!-- Page heading + short description -->
-    <h1>Congress Trades Dashboard</h1>
-    <p class="lead">
-      Aggregated recent <strong>Senate &amp; House trade disclosures</strong>,
-      and summarize <em>net buying vs. selling</em> by ticker.
-      (Exploratory only — not investment advice.)
-    </p>
+    <h1>Personalized Portfolio</h1>
+    <p class="muted">Enter tickers (comma-separated). We’ll save them locally, tailor headlines, and build price/EPS/PE charts with a 12-month forecast + backtest accuracy.</p>
 
-    <div id="stamp">Loading congress trade charts…</div>
-    <div style="margin-bottom:14px">
-      <button id="refreshBtn" title="Refetch data">Refresh</button>
-      <a href="/api/congress/top-bottom" target="_blank"><button title="View raw JSON">View JSON</button></a>
+    <div class="card" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <input id="tickers" placeholder="AAPL, MSFT, NVDA" style="flex:1;min-width:260px">
+      <button id="saveBtn">Save</button>
+      <button id="refreshBtn">Refresh</button>
+      <span id="status" class="muted"></span>
     </div>
 
     <div class="row">
       <div class="card">
-        <h3>Top 10 Net Purchases (Congress)</h3>
-        <div class="chart-box"><canvas id="topChart"></canvas></div>
+        <h3 id="chartTitle">Select a ticker</h3>
+        <div class="chart-box"><canvas id="priceChart"></canvas></div>
+        <div class="chart-box" style="margin-top:16px"><canvas id="peChart"></canvas></div>
+        <div class="muted" id="metrics" style="margin-top:8px"></div>
       </div>
       <div class="card">
-        <h3>Top 10 Net Sales (Congress)</h3>
-        <div class="chart-box"><canvas id="bottomChart"></canvas></div>
+        <h3>News for your portfolio</h3>
+        <ul class="news" id="newsList"></ul>
       </div>
     </div>
 
-    <footer>© <span id="year"></span> Fountain AI</footer>
+    <div class="card" style="margin-top:16px">
+      <label class="muted">Quick view:</label>
+      <div id="tickerButtons" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
   </div>
 
   <script>
-    let topChart, bottomChart;
+    const lsKey = 'fountain_portfolio';
+    const priceCtx = document.getElementById('priceChart');
+    const peCtx = document.getElementById('peChart');
+    let priceChart, peChart;
 
-    const currency = (v) => {
-      const sign = v < 0 ? "-" : "";
-      return sign + "$" + Math.abs(v).toLocaleString();
-    };
+    function getTickers(){ const v = localStorage.getItem(lsKey)||''; return v.split(',').map(s=>s.trim()).filter(Boolean); }
+    function setTickers(arr){ localStorage.setItem(lsKey, arr.join(', ')); }
+    function renderTickerButtons(ticks){
+      const box = document.getElementById('tickerButtons');
+      box.innerHTML = '';
+      ticks.forEach(t=>{
+        const b = document.createElement('button'); b.textContent = t;
+        b.onclick = () => loadForecast(t);
+        box.appendChild(b);
+      });
+    }
+    function currency(v){ const s = v<0?'-':''; return s + '$' + Math.abs(v).toLocaleString(); }
 
-    async function loadData() {
-      const stamp = document.getElementById('stamp');
-      try {
-        stamp.textContent = 'Loading…';
-        const res = await fetch('/api/congress/top-bottom', { cache: 'no-store' });
-        const data = await res.json();
-
-        stamp.textContent =
-          `Range: ${data.date_range || 'N/A'} • Generated at ${new Date(data.generated_at || Date.now()).toLocaleString()}`;
-
-        const topLabels = (data.top10 || []).map(d => d.stock);
-        const topValues = (data.top10 || []).map(d => d.value);
-        const botLabels = (data.bottom10 || []).map(d => d.stock);
-        const botValues = (data.bottom10 || []).map(d => d.value);
-
-        if (topChart) topChart.destroy();
-        if (bottomChart) bottomChart.destroy();
-
-        const commonOpts = {
-          responsive: true,
-          maintainAspectRatio: false,  // respect the .chart-box height
-          animation: false,            // avoid resize loops in some browsers
-          plugins: {
-            legend: { display: true },
-            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${currency(ctx.parsed.y)}` } }
-          },
-          scales: {
-            x: { ticks: { maxRotation: 55, minRotation: 35 } },
-            y: {
-              beginAtZero: true,
-              ticks: { callback: (v) => currency(v) },
-              grid: { color: 'rgba(255,255,255,.08)' }
-            }
-          }
-        };
-
-        topChart = new Chart(document.getElementById('topChart'), {
-          type: 'bar',
-          data: { labels: topLabels, datasets: [{ label: 'Net Buy ($)', data: topValues }] },
-          options: commonOpts
-        });
-
-        // Give the negative chart a touch of headroom so it doesn't try to expand
-        const minBot = Math.min(0, ...botValues);
-        const botOpts = {
-          ...commonOpts,
-          scales: {
-            ...commonOpts.scales,
-            y: { ...commonOpts.scales.y, suggestedMin: minBot * 1.1 }
-          }
-        };
-
-        bottomChart = new Chart(document.getElementById('bottomChart'), {
-          type: 'bar',
-          data: { labels: botLabels, datasets: [{ label: 'Net Sell ($)', data: botValues }] },
-          options: botOpts
-        });
-      } catch (e) {
-        console.error(e);
-        stamp.textContent = 'Failed to load data.';
-      }
+    async function loadNews(){
+      const tickers = getTickers(); if(!tickers.length) return;
+      const q = encodeURIComponent(tickers.join(','));
+      const res = await fetch(`/api/news?tickers=${q}`);  // backend aggregates headlines
+      const data = await res.json();
+      const list = document.getElementById('newsList'); list.innerHTML = '';
+      (data.articles||[]).slice(0,25).forEach(a=>{
+        const li = document.createElement('li');
+        li.innerHTML = `<a href="${a.url}" target="_blank">${a.title}</a><div class="muted">${a.source} • ${new Date(a.published_at).toLocaleString()}</div>`;
+        list.appendChild(li);
+      });
     }
 
-    document.getElementById('refreshBtn').addEventListener('click', loadData);
-    document.getElementById('year').textContent = new Date().getFullYear();
-    loadData();
+    async function loadForecast(ticker){
+      document.getElementById('chartTitle').textContent = ticker + ' — Price with 12-mo Forecast';
+      const res = await fetch(`/api/forecast/${ticker}?horizon=252`); // ~12mo trading days
+      const data = await res.json();
+
+      // Price + forecast
+      const labels = data.dates;
+      const actual = data.price;
+      const forecast = data.forecast;
+      const backtest = data.backtest; // historical forecast
+      const upper = data.forecast_upper, lower = data.forecast_lower;
+
+      if(priceChart) priceChart.destroy();
+      priceChart = new Chart(priceCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Actual Price', data: actual },
+            { label: 'Walk-forward Forecast', data: backtest, borderDash:[6,4] },
+            { label: 'Next 12m Forecast', data: forecast },
+            { label: 'Forecast Upper', data: upper, borderDash:[3,3] },
+            { label: 'Forecast Lower', data: lower, borderDash:[3,3] },
+          ]
+        },
+        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, scales:{ y:{ ticks:{ callback:v=>currency(v)} } } }
+      });
+
+      // PE / EPS (TTM)
+      if(peChart) peChart.destroy();
+      peChart = new Chart(peCtx, {
+        type: 'line',
+        data: {
+          labels: data.dates_pe,
+          datasets: [
+            { label: 'P/E (TTM)', data: data.pe_ttm },
+            { label: 'EPS (TTM)', data: data.eps_ttm }
+          ]
+        },
+        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false} }
+      });
+
+      document.getElementById('metrics').textContent =
+        `Backtest MAPE: ${data.backtest_mape.toFixed(2)}% • MAE: ${currency(data.backtest_mae)} • Coverage: ${Math.round(data.backtest_coverage*100)}%`;
+    }
+
+    // UI handlers
+    document.getElementById('saveBtn').onclick = ()=>{
+      const val = document.getElementById('tickers').value.trim();
+      const arr = val.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+      setTickers(arr); renderTickerButtons(arr); loadNews();
+      document.getElementById('status').textContent = 'Saved.';
+    };
+    document.getElementById('refreshBtn').onclick = ()=>{ loadNews(); };
+
+    // init
+    const saved = getTickers();
+    document.getElementById('tickers').value = saved.join(', ');
+    renderTickerButtons(saved);
+    if(saved[0]) loadForecast(saved[0]);
+    if(saved.length) loadNews();
   </script>
 </body>
 </html>

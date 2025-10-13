@@ -1,5 +1,9 @@
 ﻿#   uvicorn app:app --reload
-
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import feedparser
+from fastapi import Query, HTTPException
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -167,3 +171,88 @@ def congress_top_bottom():
     CACHE["congress"] = payload
     CACHE["ts"] = now
     return payload
+
+# ---------- Personalized Portfolio APIs ----------
+
+@app.get("/api/news")
+def portfolio_news(tickers: str = Query(..., description="comma separated tickers")):
+    """
+    Aggregates headlines from Yahoo Finance RSS (no API key).
+    Example feed: https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL&region=US&lang=en-US
+    """
+    syms = [s.strip().upper() for s in tickers.split(",") if s.strip()]
+    if not syms:
+        return {"count": 0, "articles": []}
+
+    articles = []
+    for s in syms:
+        url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={s}&region=US&lang=en-US"
+        feed = feedparser.parse(url)
+        for e in feed.entries[:30]:
+            articles.append({
+                "title": e.get("title"),
+                "url": e.get("link"),
+                "source": "Yahoo Finance",
+                "published_at": e.get("published") or e.get("updated") or None,
+            })
+
+    # de-dup by URL and sort newest first (RSS timestamps are messy; fallback ok)
+    seen = set()
+    dedup = []
+    for a in articles:
+        if not a["url"] or a["url"] in seen:
+            continue
+        seen.add(a["url"])
+        dedup.append(a)
+    return {"count": len(dedup), "articles": dedup[:100]}
+
+
+@app.get("/api/forecast/{ticker}")
+def forecast_one(ticker: str, horizon: int = 252):
+    """
+    Minimal working forecast: price history + simple linear trend forward,
+    plus an in-sample rolling mean as the 'backtest' line so the chart has data.
+    Upgrade later to SARIMAX with EPS/PE.
+    """
+    ticker = ticker.upper()
+    df = yf.download(ticker, period="5y", interval="1d", auto_adjust=True, progress=False)
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
+
+    s = df["Close"].dropna()
+    dates = s.index.to_pydatetime().tolist()
+    y = s.values.astype(float)
+
+    # --- simple "backtest" line: rolling mean over last 252 days ---
+    window = min(60, len(y)//6 or 30)  # small window to ensure it draws
+    backtest = pd.Series(y).rolling(window=window, min_periods=1).mean().values
+
+    # --- simple linear trend forecast for next 12 months (trading days) ---
+    x = np.arange(len(y))
+    A = np.vstack([x, np.ones_like(x)]).T
+    m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+    future_x = np.arange(len(y), len(y) + horizon)
+    fc = m * future_x + b
+
+    # loose bands: +/- 1 std of residuals
+    resid = y - (m * x + b)
+    sd = np.std(resid) if len(resid) > 1 else 0.0
+    fc_upper = fc + sd
+    fc_lower = fc - sd
+
+    # for the PE/EPS chart placeholders, return NaNs (you can fill later)
+    out = {
+        "dates": [d.strftime("%Y-%m-%d") for d in dates],
+        "price": [float(v) for v in y],
+        "forecast": [float(v) for v in fc],
+        "forecast_upper": [float(v) for v in fc_upper],
+        "forecast_lower": [float(v) for v in fc_lower],
+        "dates_pe": [d.strftime("%Y-%m-%d") for d in dates],
+        "eps_ttm": [None] * len(dates),
+        "pe_ttm": [None] * len(dates),
+        "backtest": [float(v) for v in backtest],
+        "backtest_mape": float("nan"),
+        "backtest_mae": float("nan"),
+        "backtest_coverage": float("nan"),
+    }
+    return out

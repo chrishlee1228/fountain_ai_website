@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Fountain AI - Market Insights</title>
-  <link rel="icon" type="image/png" href="/static/Fountain AI LLC - Logo.png">
+  <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
@@ -18,7 +18,20 @@
     .wrap{max-width:1200px;margin:0 auto;padding:24px}
     nav{background:#0b132b;border-bottom:1px solid var(--border)}
     .nav-inner{max-width:1200px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
-    .brand{font-weight:800;letter-spacing:.3px}
+    .brand{
+      display:flex;
+      align-items:center;
+      font-weight:800;
+      letter-spacing:.3px;
+    }
+    .brand img {
+      height: 28px;        /* adjust logo size */
+      width: auto;
+      margin-right: 8px;   /* space between logo and text */
+      display: block;      /* removes tiny bottom gap */
+      object-fit: contain; /* keeps proportions perfect */
+    }
+
     .tabs a{opacity:.85;margin-left:18px}
     .tabs a.active{opacity:1;color:var(--brand)}
     h1{margin:12px 0 4px}

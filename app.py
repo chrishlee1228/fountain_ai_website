@@ -1,18 +1,17 @@
 ﻿#   uvicorn app:app --reload
+import os, time, asyncio
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import yfinance as yf
 import feedparser
-from fastapi import Query, HTTPException
-from fastapi import FastAPI, Request
+import requests
+from bs4 import BeautifulSoup
+from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from jinja2 import Environment, FileSystemLoader
-import os, time
-from datetime import datetime, timedelta
-import asyncio
 from fastapi.templating import Jinja2Templates
-
+from jinja2 import Environment, FileSystemLoader
 
 # ----- FastAPI + templates/static -----
 app = FastAPI()
@@ -22,16 +21,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
 templates = Jinja2Templates(directory="templates")
 
-
-#automatic refresh code
+# ===== Background weekly refresh for Congress cache =====
 WEEK_SECONDS = 7 * 24 * 60 * 60  # one week
 
 @app.on_event("startup")
 async def schedule_weekly_refresh():
     async def loop_refresh():
-        # warm the cache immediately at boot
         try:
-            _refresh_congress_cache()
+            _refresh_congress_cache()  # warm on boot
         except Exception as e:
             print("Initial refresh failed:", repr(e))
 
@@ -41,18 +38,23 @@ async def schedule_weekly_refresh():
                 _refresh_congress_cache()
                 print("Weekly refresh completed")
             except Exception as e:
-                # log but do not crash the app
                 print("Weekly refresh failed:", repr(e))
-
     asyncio.create_task(loop_refresh())
 
+# ==================== Page routes ====================
 
+# NEW: blank/simple landing page at "/"
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("a.home.html", {"request": request})
+
+# Congress dashboard moved to "/congress"
+@app.get("/congress", response_class=HTMLResponse)
+def congress(request: Request):
+    return templates.TemplateResponse("congress.html", {"request": request})
 
 @app.get("/portfolio", response_class=HTMLResponse)
-async def portfolio(request: Request):
+def portfolio(request: Request):
     return templates.TemplateResponse("portfolio.html", {"request": request})
 
 @app.get("/api/ping")
@@ -64,11 +66,7 @@ def force_refresh():
     _refresh_congress_cache()
     return {"ok": True, "refreshed_at": datetime.utcnow().isoformat() + "Z"}
 
-# ----- Congress trades scraping & processing -----
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-
+# ================== Congress scraping ==================
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 CACHE = {"congress": None, "ts": 0}
 CACHE_TTL = 300  # 5 minutes
@@ -139,7 +137,6 @@ def _compute_top_bottom(df: pd.DataFrame, n=10):
 
     return {"date_range": date_range, "top10": to_list(top), "bottom10": to_list(bottom)}
 
-# --- refresh helper (put this right below _compute_top_bottom) ---
 def _refresh_congress_cache():
     """Fetch data, compute top/bottom, and store it in CACHE."""
     df = _load_congress_trades()
@@ -147,7 +144,6 @@ def _refresh_congress_cache():
     payload["generated_at"] = datetime.utcnow().isoformat() + "Z"
     CACHE["congress"] = payload
     CACHE["ts"] = time.time()
-
 
 @app.get("/api/congress/top-bottom")
 def congress_top_bottom():
@@ -163,7 +159,7 @@ def congress_top_bottom():
     CACHE["ts"] = now
     return payload
 
-# ---------- Personalized Portfolio APIs ----------
+# ================= Portfolio APIs =================
 
 @app.get("/api/news")
 def portfolio_news(tickers: str = Query(..., description="comma separated tickers")):
@@ -187,9 +183,8 @@ def portfolio_news(tickers: str = Query(..., description="comma separated ticker
                 "published_at": e.get("published") or e.get("updated") or None,
             })
 
-    # de-dup by URL and sort newest first (RSS timestamps are messy; fallback ok)
-    seen = set()
-    dedup = []
+    # de-dup by URL and trim
+    seen, dedup = set(), []
     for a in articles:
         if not a["url"] or a["url"] in seen:
             continue
@@ -197,13 +192,11 @@ def portfolio_news(tickers: str = Query(..., description="comma separated ticker
         dedup.append(a)
     return {"count": len(dedup), "articles": dedup[:100]}
 
-
 @app.get("/api/forecast/{ticker}")
 def forecast_one(ticker: str, horizon: int = 252):
     """
     Minimal working forecast: price history + simple linear trend forward,
     plus an in-sample rolling mean as the 'backtest' line so the chart has data.
-    Upgrade later to SARIMAX with EPS/PE.
     """
     ticker = ticker.upper()
     df = yf.download(ticker, period="5y", interval="1d", auto_adjust=True, progress=False)
@@ -214,25 +207,23 @@ def forecast_one(ticker: str, horizon: int = 252):
     dates = s.index.to_pydatetime().tolist()
     y = s.values.astype(float)
 
-    # --- simple "backtest" line: rolling mean over last 252 days ---
-    window = min(60, len(y)//6 or 30)  # small window to ensure it draws
+    # backtest = rolling mean
+    window = min(60, len(y)//6 or 30)
     backtest = pd.Series(y).rolling(window=window, min_periods=1).mean().values
 
-    # --- simple linear trend forecast for next 12 months (trading days) ---
+    # simple linear trend forecast
     x = np.arange(len(y))
     A = np.vstack([x, np.ones_like(x)]).T
     m, b = np.linalg.lstsq(A, y, rcond=None)[0]
     future_x = np.arange(len(y), len(y) + horizon)
     fc = m * future_x + b
 
-    # loose bands: +/- 1 std of residuals
     resid = y - (m * x + b)
     sd = np.std(resid) if len(resid) > 1 else 0.0
     fc_upper = fc + sd
     fc_lower = fc - sd
 
-    # for the PE/EPS chart placeholders, return NaNs (you can fill later)
-    out = {
+    return {
         "dates": [d.strftime("%Y-%m-%d") for d in dates],
         "price": [float(v) for v in y],
         "forecast": [float(v) for v in fc],
@@ -246,4 +237,3 @@ def forecast_one(ticker: str, horizon: int = 252):
         "backtest_mae": float("nan"),
         "backtest_coverage": float("nan"),
     }
-    return out

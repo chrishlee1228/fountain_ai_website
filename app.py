@@ -1,4 +1,4 @@
-﻿#   uvicorn app:app --reload
+﻿# uvicorn app:app --reload
 import os, time, asyncio
 from datetime import datetime
 import numpy as np
@@ -21,25 +21,73 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
 templates = Jinja2Templates(directory="templates")
 
-# ===== Background weekly refresh for Congress cache =====
-WEEK_SECONDS = 7 * 24 * 60 * 60  # one week
+# ---------- Home: Major Headlines (CNBC only) ----------
+HOME_NEWS_CACHE = {"ts": 0, "payload": None}
+HOME_NEWS_TTL = 300  # 5 minutes
 
-@app.on_event("startup")
-async def schedule_weekly_refresh():
-    async def loop_refresh():
-        try:
-            _refresh_congress_cache()  # warm on boot
-        except Exception as e:
-            print("Initial refresh failed:", repr(e))
+@app.get("/api/home/major")
+def home_major(limit: int = 20):
+    """
+    Major headlines from CNBC Top News RSS.
+    Cached for 5 minutes to keep things snappy and avoid rate limits.
+    """
+    now = time.time()
+    if HOME_NEWS_CACHE["payload"] and now - HOME_NEWS_CACHE["ts"] < HOME_NEWS_TTL:
+        return HOME_NEWS_CACHE["payload"]
 
-        while True:
-            await asyncio.sleep(WEEK_SECONDS)
-            try:
-                _refresh_congress_cache()
-                print("Weekly refresh completed")
-            except Exception as e:
-                print("Weekly refresh failed:", repr(e))
-    asyncio.create_task(loop_refresh())
+    # CNBC Top News & Analysis RSS
+    FEED_URL = "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+    headers = {
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127 Safari/537.36")
+    }
+
+    try:
+        r = requests.get(FEED_URL, headers=headers, timeout=10)
+        r.raise_for_status()
+        feed = feedparser.parse(r.content)
+    except Exception as e:
+        # Graceful fallback if CNBC is unreachable
+        print("CNBC fetch error:", repr(e))
+        payload = {
+            "count": 1,
+            "articles": [{
+                "title": "CNBC headlines unavailable right now.",
+                "url": "#",
+                "source": "System",
+                "published_at": None,
+            }]
+        }
+        HOME_NEWS_CACHE["payload"] = payload
+        HOME_NEWS_CACHE["ts"] = now
+        return payload
+
+    articles = []
+    for e in (feed.entries or [])[:limit]:
+        title = (e.get("title") or "").strip()
+        link  = (e.get("link")  or "").strip()
+        if not title or not link:
+            continue
+        articles.append({
+            "title": title,
+            "url": link,
+            "source": "CNBC",
+            "published_at": e.get("published") or e.get("updated") or None,
+        })
+
+    if not articles:
+        articles = [{
+            "title": "No CNBC headlines available right now.",
+            "url": "#",
+            "source": "System",
+            "published_at": None,
+        }]
+
+    payload = {"count": len(articles), "articles": articles}
+    HOME_NEWS_CACHE["payload"] = payload
+    HOME_NEWS_CACHE["ts"] = now
+    return payload
+
 
 # ==================== Page routes ====================
 
@@ -66,7 +114,166 @@ def force_refresh():
     _refresh_congress_cache()
     return {"ok": True, "refreshed_at": datetime.utcnow().isoformat() + "Z"}
 
+# ========= SEC utilities ==============================
+import re
+from functools import lru_cache
+
+SEC_HEADERS = {
+    # Per SEC fair-use policy, include a descriptive UA + contact
+    "User-Agent": "FountainAI/1.0 (fountain-ai.com) Contact: admin@fountain-ai.com",
+    "Accept": "application/json, text/xml, application/atom+xml;q=0.9,*/*;q=0.8",
+}
+
+def _clean_text(s: str | None) -> str:
+    if not s:
+        return ""
+    # compact whitespace
+    return re.sub(r"\s+", " ", s).strip()
+
+HOME_SEC_CACHE = {"ts": 0, "payload": None}
+HOME_SEC_TTL = 300  # 5 minutes
+
+#=====================
+@app.get("/api/home/sec-recent")
+def sec_recent(forms: str = "10-K,10-Q,8-K", count: int = 50):
+    """
+    Recent SEC filings from EDGAR 'current events'. Robust:
+    1) Try Atom feed (preferred, faster, structured)
+    2) If empty, fallback to scraping the HTML page
+    """
+    now = time.time()
+    if HOME_SEC_CACHE["payload"] and now - HOME_SEC_CACHE["ts"] < HOME_SEC_TTL:
+        return HOME_SEC_CACHE["payload"]
+
+    want = {f.strip().upper() for f in forms.split(",") if f.strip()}
+    filings: list[dict] = []
+
+    # -------- 1) Atom feed ----------
+    atom_url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&count={count}&output=atom"
+    try:
+        r = requests.get(atom_url, headers=SEC_HEADERS, timeout=15)
+        r.raise_for_status()
+        parsed = feedparser.parse(r.content)
+
+        for ent in parsed.entries or []:
+            title = _clean_text(ent.get("title"))
+            link = ent.get("link")
+            updated = ent.get("updated") or ent.get("published")
+
+            # Best source of the form type in Atom is category.term (when present)
+            atom_form = None
+            cats = ent.get("tags") or ent.get("categories") or []
+            for c in cats:
+                term = (c.get("term") or "").upper()
+                if term in want:
+                    atom_form = term
+                    break
+
+            if not atom_form:
+                # tolerant regex: find the token anywhere
+                m = re.search(r"\b(10-K|10-Q|8-K)\b", title, flags=re.I)
+                if m:
+                    atom_form = m.group(1).upper()
+
+            if not atom_form or (want and atom_form not in want):
+                continue
+
+            # Try to extract company from " - " split; if not, just use title
+            company = title
+            if " - " in title:
+                parts = title.split(" - ", 1)
+                # If the form was before the dash, company is likely after
+                company = parts[-1].strip()
+
+            filings.append({
+                "company": company,
+                "form": atom_form,
+                "filed_at": updated,
+                "url": link,
+                "source": "SEC EDGAR",
+            })
+    except Exception as e:
+        print("SEC Atom fetch error:", repr(e))
+
+    # -------- 2) Fallback to HTML scrape if Atom produced nothing ----------
+    if not filings:
+        html_url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&start=0&count={count}"
+        try:
+            r = requests.get(html_url, headers=SEC_HEADERS, timeout=15)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # The current page is a table where first col is Form, 3rd is Description (company is inside)
+            # Find all rows after the header
+            rows = soup.select("table tr")[1:]  # skip header
+            for tr in rows:
+                tds = tr.find_all("td")
+                if len(tds) < 3:
+                    continue
+                form = _clean_text(tds[0].get_text()).upper()
+                if want and form not in want:
+                    continue
+
+                desc = _clean_text(tds[2].get_text())
+                # Company link is usually in the 3rd <td>
+                comp_a = tds[2].find("a")
+                company = desc
+                if comp_a and comp_a.text.strip():
+                    company = _clean_text(comp_a.text)
+
+                # Document detail link if present
+                link = None
+                link_a = tds[2].find("a", href=True)
+                if link_a:
+                    href = link_a["href"]
+                    link = href if href.startswith("http") else f"https://www.sec.gov{href}"
+
+                # Accepted/Filed columns sometimes present further to the right; grab safely if exist
+                filed_at = None
+                if len(tds) >= 6:
+                    filed_at = _clean_text(tds[5].get_text())  # "Accepted" timestamp is often in col 6
+
+                filings.append({
+                    "company": company,
+                    "form": form,
+                    "filed_at": filed_at,
+                    "url": link,
+                    "source": "SEC EDGAR",
+                })
+        except Exception as e:
+            print("SEC HTML scrape error:", repr(e))
+
+    # Finalize payload (limit and cache)
+    filings = filings[:count]
+    payload = {"count": len(filings), "filings": filings}
+    HOME_SEC_CACHE["payload"] = payload
+    HOME_SEC_CACHE["ts"] = now
+    return payload
+
+
 # ================== Congress scraping ==================
+
+# ===== Background weekly refresh for Congress cache =====
+WEEK_SECONDS = 7 * 24 * 60 * 60  # one week
+
+@app.on_event("startup")
+async def schedule_weekly_refresh():
+    async def loop_refresh():
+        try:
+            _refresh_congress_cache()  # warm on boot
+        except Exception as e:
+            print("Initial refresh failed:", repr(e))
+
+        while True:
+            await asyncio.sleep(WEEK_SECONDS)
+            try:
+                _refresh_congress_cache()
+                print("Weekly refresh completed")
+            except Exception as e:
+                print("Weekly refresh failed:", repr(e))
+    asyncio.create_task(loop_refresh())
+
+
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 CACHE = {"congress": None, "ts": 0}
 CACHE_TTL = 300  # 5 minutes

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Fountain AI - Personalized Portfolio</title>
+  <title>Fountain AI - Market Insights</title>
   <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -23,6 +23,15 @@
     input,textarea{padding:.55rem .7rem}
     button{padding:.55rem .8rem;cursor:pointer}
     button:hover{filter:brightness(1.1)}
+    ul.news{
+      max-height: 500px;      /* adjust height to taste */
+      overflow: auto;
+      margin: 0;
+      padding-left: 1.1rem;   /* keep bullets aligned */
+    }
+    ul.news li{
+      margin: 8px 0;
+    }
     ul.news{list-style:none;padding:0;margin:0}
     ul.news li{border-bottom:1px solid rgba(255,255,255,.08);padding:10px 0}
     .muted{color:#aab4cc}
@@ -34,7 +43,7 @@
   <nav>
     <div class="nav-inner">
       <div class="brand">
-        <img src="/static/company_logo.png" alt="Fountain AI logo"><span>Fountain AI</span>
+        <img src="/static/company_logo.png" alt="Fountain AI logo"><span>Fountain AI - Market Intelligence That Matters</span>
       </div>
       <div class="tabs">
         <a href="/">Home</a>

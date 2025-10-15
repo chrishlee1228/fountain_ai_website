@@ -2,173 +2,178 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Fountain AI - Market Insights</title>
+  <title>Fountain AI — Home</title>
   <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
-    :root{
-      --bg:#0b1020; --panel:#121832; --text:#e9ecf1; --muted:#aab4cc; --brand:#7cb8ff;
-      --border:rgba(255,255,255,.08);
-    }
+    :root{ --bg:#0b1020; --panel:#121832; --text:#e9ecf1; --muted:#aab4cc; --brand:#7cb8ff; --border:rgba(255,255,255,.08) }
     *{box-sizing:border-box}
-    html,body{height:auto;margin:0}
-    body{background:var(--bg);color:var(--text);font:16px/1.5 system-ui,Segoe UI,Roboto,Arial}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,Segoe UI,Roboto,Arial}
     a{color:var(--text);text-decoration:none}
-    .wrap{max-width:1200px;margin:0 auto;padding:24px}
     nav{background:#0b132b;border-bottom:1px solid var(--border)}
     .nav-inner{max-width:1200px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
-    .brand{
-      display:flex;
-      align-items:center;
-      font-weight:800;
-      letter-spacing:.3px;
+    .brand{display:flex;align-items:center;font-weight:800;letter-spacing:.3px}
+    .brand img{height:28px;margin-right:8px}
+    .tabs a{opacity:.85;margin-left:18px}
+    .tabs a.active{opacity:1;color:var(--brand);font-weight:700}
+
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    h1{margin:10px 0 16px}
+    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+    @media (max-width:1100px){ .grid{grid-template-columns:1fr} }
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+    .muted{color:var(--muted)}
+    .btn{display:inline-block;background:#1a2250;border:1px solid var(--border);padding:.6rem .9rem;border-radius:10px;margin-right:8px}
+    .section{margin-top:20px}
+    table{width:100%;border-collapse:collapse}
+    th, td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+    th{font-weight:700}
+    /* Scrollable headlines list */
+    ul.news{
+      max-height: 320px;      /* adjust height to taste */
+      overflow: auto;
+      margin: 0;
+      padding-left: 1.1rem;   /* keep bullets aligned */
     }
-    .brand img {
-      height: 28px;        /* adjust logo size */
-      width: auto;
-      margin-right: 8px;   /* space between logo and text */
-      display: block;      /* removes tiny bottom gap */
-      object-fit: contain; /* keeps proportions perfect */
+    ul.news li{
+      margin: 8px 0;
     }
 
-    .tabs a{opacity:.85;margin-left:18px}
-    .tabs a.active{opacity:1;color:var(--brand)}
-    h1{margin:12px 0 4px}
-    .lead{color:var(--muted);margin:0 0 10px}
-    #stamp{color:var(--muted);font-size:.9rem;margin:6px 0 18px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-    @media (max-width:1000px){ .row{grid-template-columns:1fr} }
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
-    .card h3{margin:6px 0 10px}
-    /* HARD STOP on chart height + avoid resize loops */
-    .chart-box{position:relative;height:420px;overflow:hidden}
-    canvas{display:block;width:100% !important;height:100% !important}
-    footer{color:var(--muted);font-size:.9rem;margin-top:20px}
-    button{background:#1a2250;border:1px solid var(--border);border-radius:10px;padding:.45rem .7rem;color:#fff;cursor:pointer}
-    button:hover{filter:brightness(1.1)}
+    ul.news { max-height: 480px; overflow: auto; margin: 0; padding-left: 1.1rem; }
+    ul.news li { margin: 8px 0; }
+
+    /* Add this new rule */
+    #sec-recent { max-height: 480px; overflow: auto; }
+
+
   </style>
 </head>
 <body>
-<!-- Top navigation -->
-<nav>
-  <div class="nav-inner">
-    <div class="brand">
-      <img src="/static/company_logo.png" alt="Fountain AI logo">
-      <span>Fountain AI</span>
+  <nav>
+    <div class="nav-inner">
+      <div class="brand">
+        <img src="/static/company_logo.png" alt="Fountain AI logo"><span>Fountain AI - Market Intelligence That Matters</span>
+      </div>
+      <div class="tabs">
+        <a href="/" class="active">Home</a>
+        <a href="/congress">Congress Trades</a>
+        <a href="/portfolio">Personalized Portfolio</a>
+      </div>
     </div>
-    <div class="tabs">
-      <a href="/" class="active">Congress Trades</a>
-      <a href="/portfolio">Personalized Portfolio</a>
-    </div>
-  </div>
-</nav>
+  </nav>
 
   <div class="wrap">
-    <!-- Page heading + short description -->
-    <h1>Congress Trades Dashboard</h1>
-    <p class="lead">
-      Aggregated recent <strong>Senate &amp; House trade disclosures</strong>,
-      and summarize <em>net buying vs. selling</em> by ticker.
-      (Exploratory only — not investment advice.)
-    </p>
+    <h1>Today</h1>
 
-    <div id="stamp">Loading congress trade charts…</div>
-    <div style="margin-bottom:14px">
-      <button id="refreshBtn" title="Refetch data">Refresh</button>
-      <a href="/api/congress/top-bottom" target="_blank"><button title="View raw JSON">View JSON</button></a>
+    <!-- Cards -->
+    <div class="grid">
+      <div class="card">
+        <h3>Major Headlines</h3>
+        <ul class="news" id="news-major"></ul>
+        <div class="muted">Source: Reuters</div>
+      </div>
+
+    <div class="card">
+      <h3>Recent SEC Filings (10-K / 10-Q / 8-K)</h3>
+      <ul class="news" id="sec-recent"></ul>
+      <div class="muted">Source: SEC EDGAR</div>
     </div>
 
-    <div class="row">
       <div class="card">
-        <h3>Top 10 Net Purchases (Congress)</h3>
-        <div class="chart-box"><canvas id="topChart"></canvas></div>
+        <h3>Government News</h3>
+        <p class="muted">Key policy, regulation, and fiscal updates.</p>
       </div>
+
       <div class="card">
-        <h3>Top 10 Net Sales (Congress)</h3>
-        <div class="chart-box"><canvas id="bottomChart"></canvas></div>
+        <h3>Industry &amp; Markets</h3>
+        <p class="muted">Sector moves, earnings, and macro drivers.</p>
       </div>
     </div>
 
-    <footer>© <span id="year"></span> Fountain AI</footer>
+    <!-- Static table shell (no data fetching) -->
+    <div class="card section">
+      <h3>Sector Snapshot</h3>
+      <p class="muted">Overview of sectors. (Data section intentionally blank in this basic version.)</p>
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Industry / Sector</th>
+              <th>Market Cap Share</th>
+              <th>Weight</th>
+              <th>Daily</th>
+              <th>MTD</th>
+              <th>YTD</th>
+              <th>ITD</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <a class="btn" href="/congress">Go to Congress Trades</a>
+      <a class="btn" href="/portfolio">Go to Personalized Portfolio</a>
+    </div>
   </div>
 
+  <!-- Put the script at the bottom so #news-major exists -->
   <script>
-    let topChart, bottomChart;
-
-    const currency = (v) => {
-      const sign = v < 0 ? "-" : "";
-      return sign + "$" + Math.abs(v).toLocaleString();
-    };
-
-    async function loadData() {
-      const stamp = document.getElementById('stamp');
+    async function loadMajor() {
       try {
-        stamp.textContent = 'Loading…';
-        const res = await fetch('/api/congress/top-bottom', { cache: 'no-store' });
+        const res = await fetch('/api/home/major', { cache: 'no-store' });
         const data = await res.json();
-
-        stamp.textContent =
-          `Range: ${data.date_range || 'N/A'} • Generated at ${new Date(data.generated_at || Date.now()).toLocaleString()}`;
-
-        const topLabels = (data.top10 || []).map(d => d.stock);
-        const topValues = (data.top10 || []).map(d => d.value);
-        const botLabels = (data.bottom10 || []).map(d => d.stock);
-        const botValues = (data.bottom10 || []).map(d => d.value);
-
-        if (topChart) topChart.destroy();
-        if (bottomChart) bottomChart.destroy();
-
-        const commonOpts = {
-          responsive: true,
-          maintainAspectRatio: false,  // respect the .chart-box height
-          animation: false,            // avoid resize loops in some browsers
-          plugins: {
-            legend: { display: true },
-            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${currency(ctx.parsed.y)}` } }
-          },
-          scales: {
-            x: { ticks: { maxRotation: 55, minRotation: 35 } },
-            y: {
-              beginAtZero: true,
-              ticks: { callback: (v) => currency(v) },
-              grid: { color: 'rgba(255,255,255,.08)' }
-            }
-          }
-        };
-
-        topChart = new Chart(document.getElementById('topChart'), {
-          type: 'bar',
-          data: { labels: topLabels, datasets: [{ label: 'Net Buy ($)', data: topValues }] },
-          options: commonOpts
+        const ul = document.getElementById('news-major');
+        ul.innerHTML = '';
+        (data.articles || []).slice(0, 12).forEach(a => {
+          const li = document.createElement('li');
+          li.innerHTML = `<a href="${a.url}" target="_blank">${a.title}</a>
+                          <div class="muted">${a.source} • ${new Date(a.published_at || Date.now()).toLocaleString()}</div>`;
+          ul.appendChild(li);
         });
-
-        // Give the negative chart a touch of headroom so it doesn't try to expand
-        const minBot = Math.min(0, ...botValues);
-        const botOpts = {
-          ...commonOpts,
-          scales: {
-            ...commonOpts.scales,
-            y: { ...commonOpts.scales.y, suggestedMin: minBot * 1.1 }
-          }
-        };
-
-        bottomChart = new Chart(document.getElementById('bottomChart'), {
-          type: 'bar',
-          data: { labels: botLabels, datasets: [{ label: 'Net Sell ($)', data: botValues }] },
-          options: botOpts
-        });
+        if (!data.articles || !data.articles.length) {
+          ul.innerHTML = '<li class="muted">No headlines available.</li>';
+        }
       } catch (e) {
+        const ul = document.getElementById('news-major');
+        ul.innerHTML = '<li class="muted">Failed to load headlines.</li>';
         console.error(e);
-        stamp.textContent = 'Failed to load data.';
       }
     }
-
-    document.getElementById('refreshBtn').addEventListener('click', loadData);
-    document.getElementById('year').textContent = new Date().getFullYear();
-    loadData();
+    // Ensure it runs after the DOM is ready
+    window.addEventListener('DOMContentLoaded', loadMajor);
   </script>
 </body>
-</html>
 
-<!-- deploy-fingerprint: 2025-10-14T18:43:31.0083603-05:00 -->
+<script>
+async function loadSecRecent() {
+  try {
+    const res = await fetch('/api/home/sec-recent?forms=10-K,10-Q,8-K&count=100', { cache:'no-store' });
+    const data = await res.json();
+    const ul = document.getElementById('sec-recent');
+    ul.innerHTML = '';
+    (data.filings || []).forEach(f => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <a href="${f.url || '#'}" target="_blank">${f.form} — ${f.company}</a>
+        <div class="muted">${f.filed_at ? new Date(f.filed_at).toLocaleString() : ''}</div>
+      `;
+      ul.appendChild(li);
+    });
+    if (!data.filings || !data.filings.length) {
+      ul.innerHTML = '<li class="muted">No recent SEC filings found.</li>';
+    }
+  } catch (e) {
+    const ul = document.getElementById('sec-recent');
+    if (ul) ul.innerHTML = '<li class="muted">Failed to load SEC filings.</li>';
+    console.error(e);
+  }
+}
+window.addEventListener('DOMContentLoaded', loadSecRecent);
+</script>
+
+
+
+</body>
+</html>

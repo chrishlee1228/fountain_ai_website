@@ -55,15 +55,6 @@ def home(request: Request):
 async def portfolio(request: Request):
     return templates.TemplateResponse("portfolio.html", {"request": request})
 
-@app.get("/markets", response_class=HTMLResponse)
-def markets(request: Request):
-    return templates.TemplateResponse("markets.html", {"request": request})
-
-@app.get("/insights", response_class=HTMLResponse)
-def insights(request: Request):
-    return templates.TemplateResponse("insights.html", {"request": request})
-
-
 @app.get("/api/ping")
 def ping():
     return {"ok": True}

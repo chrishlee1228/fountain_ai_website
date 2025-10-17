@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Fountain AI - Market Insights</title>
+  <title>Fountain AI — My Portfolio</title>
   <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
     body{background:#0b1020;color:#e9ecf1;font:16px/1.5 system-ui,Segoe UI,Roboto,Arial;margin:0}
     a{color:#e9ecf1;text-decoration:none}
@@ -14,29 +13,22 @@
     .brand{display:flex;align-items:center;font-weight:800;letter-spacing:.3px}
     .brand img{height:28px;width:auto;margin-right:8px;display:block;object-fit:contain}
     .wrap{max-width:1200px;margin:0 auto;padding:24px}
-    .row{display:grid;grid-template-columns:2fr 1fr;gap:24px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:24px}
     @media (max-width:1100px){ .row{grid-template-columns:1fr} }
     .card{background:#121832;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
-    .chart-box{position:relative;height:420px;overflow:hidden}
-    canvas{display:block;width:100% !important;height:100% !important}
-    input,button,textarea{background:#1a2250;border:1px solid rgba(255,255,255,.08);border-radius:10px;color:#fff}
-    input,textarea{padding:.55rem .7rem}
+    input,button{background:#1a2250;border:1px solid rgba(255,255,255,.08);border-radius:10px;color:#fff}
+    input{padding:.55rem .7rem}
     button{padding:.55rem .8rem;cursor:pointer}
     button:hover{filter:brightness(1.1)}
-    ul.news{
-      max-height: 500px;      /* adjust height to taste */
-      overflow: auto;
-      margin: 0;
-      padding-left: 1.1rem;   /* keep bullets aligned */
-    }
-    ul.news li{
-      margin: 8px 0;
-    }
-    ul.news{list-style:none;padding:0;margin:0}
-    ul.news li{border-bottom:1px solid rgba(255,255,255,.08);padding:10px 0}
     .muted{color:#aab4cc}
     .tabs a{opacity:.85;margin-left:18px}
     .tabs a.active{opacity:1;color:#7cb8ff;font-weight:700}
+    ul.list{list-style:none;padding:0;margin:0}
+    ul.list li{border-bottom:1px solid rgba(255,255,255,.08);padding:10px 0}
+    .pill{display:inline-block;background:#1a2250;border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:2px 8px;font-size:.8rem;margin-left:8px}
+    .scroll{max-height:520px;overflow:auto}
+    h4 small{font-weight:400}
+    .desc{margin-top:4px}
   </style>
 </head>
 <body>
@@ -48,14 +40,14 @@
       <div class="tabs">
         <a href="/">Home</a>
         <a href="/congress">Congress Trades</a>
-        <a href="/portfolio" class="active">Personalized Portfolio</a>
+        <a href="/portfolio" class="active">My Portfolio</a>
       </div>
     </div>
   </nav>
 
   <div class="wrap">
     <h1>Personalized Portfolio</h1>
-    <p class="muted">Enter tickers (comma-separated). We’ll save them locally, tailor headlines, and build price/EPS/PE charts with a 12-month forecast + backtest accuracy.</p>
+    <p class="muted">Enter tickers (comma-separated). We’ll save them locally, show tailored news, and list recent SEC filings (10-K / 10-Q / 8-K).</p>
 
     <div class="card" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
       <input id="tickers" placeholder="AAPL, MSFT, NVDA" style="flex:1;min-width:260px">
@@ -66,14 +58,18 @@
 
     <div class="row">
       <div class="card">
-        <h3 id="chartTitle">Select a ticker</h3>
-        <div class="chart-box"><canvas id="priceChart"></canvas></div>
-        <div class="chart-box" style="margin-top:16px"><canvas id="peChart"></canvas></div>
-        <div class="muted" id="metrics" style="margin-top:8px"></div>
-      </div>
-      <div class="card">
         <h3>News for your portfolio</h3>
-        <ul class="news" id="newsList"></ul>
+        <div class="scroll">
+          <ul class="list" id="newsList"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Recent SEC Filings <small class="muted">(10-K / 10-Q / 8-K)</small></h3>
+        <div class="scroll" id="secContainer">
+          <div class="muted">Add tickers above to see filings.</div>
+        </div>
+        <div class="muted" style="margin-top:8px">Source: SEC EDGAR</div>
       </div>
     </div>
 
@@ -83,99 +79,133 @@
     </div>
   </div>
 
-  <script>
-    const lsKey = 'fountain_portfolio';
-    const priceCtx = document.getElementById('priceChart');
-    const peCtx = document.getElementById('peChart');
-    let priceChart, peChart;
+<script>
+  const lsKey = 'fountain_portfolio';
 
-    function getTickers(){ const v = localStorage.getItem(lsKey)||''; return v.split(',').map(s=>s.trim()).filter(Boolean); }
-    function setTickers(arr){ localStorage.setItem(lsKey, arr.join(', ')); }
-    function renderTickerButtons(ticks){
-      const box = document.getElementById('tickerButtons');
-      box.innerHTML = '';
-      ticks.forEach(t=>{
-        const b = document.createElement('button'); b.textContent = t;
-        b.onclick = () => loadForecast(t);
-        box.appendChild(b);
-      });
-    }
-    function currency(v){ const s = v<0?'-':''; return s + '$' + Math.abs(v).toLocaleString(); }
+  function parseTickersFromInput() {
+    const val = (document.getElementById('tickers').value || '').trim();
+    return val ? val.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+  }
 
-    async function loadNews(){
-      const tickers = getTickers(); if(!tickers.length) return;
-      const q = encodeURIComponent(tickers.join(','));
-      const res = await fetch(`/api/news?tickers=${q}`);  // backend aggregates headlines
+  function getTickers() {
+    const fromInput = parseTickersFromInput();
+    if (fromInput.length) return fromInput;
+    const v = localStorage.getItem(lsKey) || '';
+    return v.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  }
+
+  function setTickers(arr){ localStorage.setItem(lsKey, arr.join(', ')); }
+
+  function renderTickerButtons(ticks){
+    const box = document.getElementById('tickerButtons');
+    box.innerHTML = '';
+    ticks.forEach(t=>{
+      const b = document.createElement('button'); b.textContent = t;
+      b.onclick = () => window.open(`https://finance.yahoo.com/quote/${t}`, '_blank');
+      box.appendChild(b);
+    });
+  }
+
+  async function loadNews(){
+    const ticks = getTickers();
+    const list = document.getElementById('newsList');
+    list.innerHTML = '';
+    if(!ticks.length){ list.innerHTML = '<li class="muted">Add tickers above to see news.</li>'; return; }
+    const q = encodeURIComponent(ticks.join(','));
+    try{
+      const res = await fetch(`/api/news?tickers=${q}`);
       const data = await res.json();
-      const list = document.getElementById('newsList'); list.innerHTML = '';
-      (data.articles||[]).slice(0,25).forEach(a=>{
+      (data.articles||[]).slice(0,40).forEach(a=>{
         const li = document.createElement('li');
-        li.innerHTML = `<a href="${a.url}" target="_blank">${a.title}</a><div class="muted">${a.source} • ${new Date(a.published_at).toLocaleString()}</div>`;
+        const when = a.published_at ? new Date(a.published_at).toLocaleString() : '';
+        li.innerHTML = `<a href="${a.url}" target="_blank">${a.title}</a><div class="muted">${a.source}${when?' • '+when:''}</div>`;
         list.appendChild(li);
       });
+      if(!list.children.length){ list.innerHTML = '<li class="muted">No recent headlines.</li>'; }
+    }catch(e){
+      console.error('loadNews error', e);
+      list.innerHTML = '<li class="muted">Failed to load news.</li>';
     }
+  }
 
-    async function loadForecast(ticker){
-      document.getElementById('chartTitle').textContent = ticker + ' — Price with 12-mo Forecast';
-      const res = await fetch(`/api/forecast/${ticker}?horizon=252`); // ~12mo trading days
+  function truncate(s, n){
+    if(!s) return '';
+    return s.length > n ? s.slice(0, n-1) + '…' : s;
+  }
+
+  async function loadSec(){
+    const ticks = getTickers();
+    const box = document.getElementById('secContainer');
+    box.innerHTML = '';
+    if(!ticks.length){ box.innerHTML = '<div class="muted">Add tickers above to see filings.</div>'; return; }
+    try{
+      const q = encodeURIComponent(ticks.join(','));
+      const url = `/api/sec/filings-browse-for?tickers=${q}&forms=10-K,10-Q,8-K&count_per=200`;
+      console.log('[SEC] GET', url);
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
 
-      // Price + forecast
-      const labels = data.dates;
-      const actual = data.price;
-      const forecast = data.forecast;
-      const backtest = data.backtest; // historical forecast
-      const upper = data.forecast_upper, lower = data.forecast_lower;
+      const byTicker = data.by_ticker || {};
+      const keys = Object.keys(byTicker).sort();
+      if(!keys.length){
+        box.innerHTML = '<div class="muted">No filings returned (rate limit or network issue?).</div>';
+        console.warn('filings empty', data);
+        return;
+      }
 
-      if(priceChart) priceChart.destroy();
-      priceChart = new Chart(priceCtx, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            { label: 'Actual Price', data: actual },
-            { label: 'Walk-forward Forecast', data: backtest, borderDash:[6,4] },
-            { label: 'Next 12m Forecast', data: forecast },
-            { label: 'Forecast Upper', data: upper, borderDash:[3,3] },
-            { label: 'Forecast Lower', data: lower, borderDash:[3,3] },
-          ]
-        },
-        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, scales:{ y:{ ticks:{ callback:v=>currency(v)} } } }
+      keys.forEach(t=>{
+        const list = byTicker[t] || [];
+        const section = document.createElement('div');
+        section.style.marginBottom = '12px';
+        section.innerHTML = `<h4>${t}<span class="pill">${list.length}</span></h4>`;
+        const ul = document.createElement('ul'); ul.className = 'list';
+
+        if(!list.length){
+          const li = document.createElement('li'); li.className='muted'; li.textContent='No recent filings.'; ul.appendChild(li);
+        }else{
+          list.forEach(f=>{
+            const when = f.filed_at ? new Date(f.filed_at).toLocaleString() : '';
+            const desc = f.desc ? `<div class="muted desc">${truncate(f.desc, 180)}</div>` : '';
+            const li = document.createElement('li');
+            li.innerHTML = `
+              <a href="${f.url}" target="_blank">${f.form} — ${f.company}</a>
+              <div class="muted">${when}</div>
+              ${desc}
+            `;
+            ul.appendChild(li);
+          });
+        }
+        section.appendChild(ul);
+        box.appendChild(section);
       });
-
-      // PE / EPS (TTM)
-      if(peChart) peChart.destroy();
-      peChart = new Chart(peCtx, {
-        type: 'line',
-        data: {
-          labels: data.dates_pe,
-          datasets: [
-            { label: 'P/E (TTM)', data: data.pe_ttm },
-            { label: 'EPS (TTM)', data: data.eps_ttm }
-          ]
-        },
-        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false} }
-      });
-
-      document.getElementById('metrics').textContent =
-        `Backtest MAPE: ${data.backtest_mape.toFixed(2)}% • MAE: ${currency(data.backtest_mae)} • Coverage: ${Math.round(data.backtest_coverage*100)}%`;
+    }catch(e){
+      console.error('loadSec error', e);
+      box.innerHTML = '<div class="muted">Failed to load SEC filings.</div>';
     }
+  }
 
-    // UI handlers
-    document.getElementById('saveBtn').onclick = ()=>{
-      const val = document.getElementById('tickers').value.trim();
-      const arr = val.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
-      setTickers(arr); renderTickerButtons(arr); loadNews();
-      document.getElementById('status').textContent = 'Saved.';
-    };
-    document.getElementById('refreshBtn').onclick = ()=>{ loadNews(); };
+  document.getElementById('saveBtn').onclick = ()=>{
+    const arr = parseTickersFromInput();
+    setTickers(arr); renderTickerButtons(arr); loadNews(); loadSec();
+    document.getElementById('status').textContent = 'Saved.';
+    setTimeout(()=>document.getElementById('status').textContent='', 1500);
+  };
 
-    // init
-    const saved = getTickers();
-    document.getElementById('tickers').value = saved.join(', ');
-    renderTickerButtons(saved);
-    if(saved[0]) loadForecast(saved[0]);
-    if(saved.length) loadNews();
-  </script>
+  document.getElementById('refreshBtn').onclick = ()=>{
+    const arr = parseTickersFromInput();
+    if (arr.length) { setTickers(arr); renderTickerButtons(arr); }
+    loadNews(); loadSec();
+  };
+
+  document.getElementById('tickers').addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('saveBtn').click(); }
+  });
+
+  const saved = (localStorage.getItem(lsKey)||'').split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  document.getElementById('tickers').value = saved.join(', ');
+  renderTickerButtons(saved);
+  if(saved.length){ loadNews(); loadSec(); }
+</script>
+
 </body>
 </html>

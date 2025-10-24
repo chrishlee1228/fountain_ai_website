@@ -1,0 +1,13 @@
+label,fred_id,declared_freq
+Real_GDP,GDPC1,Q
+Unemployment_Rate,UNRATE,M
+Nonfarm_Payrolls,PAYEMS,M
+CPI_All_Items,CPIAUCSL,M
+PCE_Price_Index,PCEPI,M
+Industrial_Production,INDPRO,M
+Retail_Sales,RSAFS,M
+Revolving_Consumer_Credit,REVOLSL,M
+Housing_Starts,HOUST,M
+Fed_Funds_Rate,FEDFUNDS,M
+Treasury_10Y_Yield,DGS10,D
+Job_Openings_JOLTS,JTSJOL,M

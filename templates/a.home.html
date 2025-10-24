@@ -16,36 +16,14 @@
     .brand img{height:28px;margin-right:8px}
     .tabs a{opacity:.85;margin-left:18px}
     .tabs a.active{opacity:1;color:var(--brand);font-weight:700}
-
     .wrap{max-width:1200px;margin:0 auto;padding:24px}
     h1{margin:10px 0 16px}
-    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
-    @media (max-width:1100px){ .grid{grid-template-columns:1fr} }
+    .grid{display:grid;grid-template-columns:1fr;gap:18px}
     .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
     .muted{color:var(--muted)}
     .btn{display:inline-block;background:#1a2250;border:1px solid var(--border);padding:.6rem .9rem;border-radius:10px;margin-right:8px}
-    .section{margin-top:20px}
-    table{width:100%;border-collapse:collapse}
-    th, td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
-    th{font-weight:700}
-    /* Scrollable headlines list */
-    ul.news{
-      max-height: 320px;      /* adjust height to taste */
-      overflow: auto;
-      margin: 0;
-      padding-left: 1.1rem;   /* keep bullets aligned */
-    }
-    ul.news li{
-      margin: 8px 0;
-    }
-
-    ul.news { max-height: 480px; overflow: auto; margin: 0; padding-left: 1.1rem; }
-    ul.news li { margin: 8px 0; }
-
-    /* Add this new rule */
-    #sec-recent { max-height: 480px; overflow: auto; }
-
-
+    ul.news{ max-height:480px; overflow:auto; margin:0; padding-left:1.1rem }
+    ul.news li{ margin:8px 0 }
   </style>
 </head>
 <body>
@@ -65,43 +43,22 @@
   <div class="wrap">
     <h1>Today</h1>
 
-    <!-- Cards -->
     <div class="grid">
+      <!-- Headlines -->
       <div class="card">
         <h3>Major Headlines</h3>
         <ul class="news" id="news-major"></ul>
-        <div class="muted">Source: Reuters</div>
-      </div>
-
-    <!-- Static table shell (no data fetching) -->
-    <div class="card section">
-      <h3>Sector Snapshot</h3>
-      <p class="muted">Overview of sectors. (Data section intentionally blank in this basic version.)</p>
-      <div style="overflow:auto">
-        <table>
-          <thead>
-            <tr>
-              <th>Industry / Sector</th>
-              <th>Market Cap Share</th>
-              <th>Weight</th>
-              <th>Daily</th>
-              <th>MTD</th>
-              <th>YTD</th>
-              <th>ITD</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div class="muted">Source: CNBC</div>
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" style="margin-top:20px">
       <a class="btn" href="/congress">Go to Congress Trades</a>
       <a class="btn" href="/portfolio">Go to Personalized Portfolio</a>
     </div>
   </div>
 
-  <!-- Put the script at the bottom so #news-major exists -->
+  <!-- Scripts -->
   <script>
     async function loadMajor() {
       try {
@@ -111,7 +68,7 @@
         ul.innerHTML = '';
         (data.articles || []).slice(0, 12).forEach(a => {
           const li = document.createElement('li');
-          li.innerHTML = `<a href="${a.url}" target="_blank">${a.title}</a>
+          li.innerHTML = `<a href="${a.url}" target="_blank" rel="noopener noreferrer">${a.title}</a>
                           <div class="muted">${a.source} • ${new Date(a.published_at || Date.now()).toLocaleString()}</div>`;
           ul.appendChild(li);
         });
@@ -119,44 +76,12 @@
           ul.innerHTML = '<li class="muted">No headlines available.</li>';
         }
       } catch (e) {
-        const ul = document.getElementById('news-major');
-        ul.innerHTML = '<li class="muted">Failed to load headlines.</li>';
+        document.getElementById('news-major').innerHTML = '<li class="muted">Failed to load headlines.</li>';
         console.error(e);
       }
     }
-    // Ensure it runs after the DOM is ready
+
     window.addEventListener('DOMContentLoaded', loadMajor);
   </script>
-</body>
-
-<script>
-async function loadSecRecent() {
-  try {
-    const res = await fetch('/api/home/sec-recent?forms=10-K,10-Q,8-K&count=100', { cache:'no-store' });
-    const data = await res.json();
-    const ul = document.getElementById('sec-recent');
-    ul.innerHTML = '';
-    (data.filings || []).forEach(f => {
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <a href="${f.url || '#'}" target="_blank">${f.form} — ${f.company}</a>
-        <div class="muted">${f.filed_at ? new Date(f.filed_at).toLocaleString() : ''}</div>
-      `;
-      ul.appendChild(li);
-    });
-    if (!data.filings || !data.filings.length) {
-      ul.innerHTML = '<li class="muted">No recent SEC filings found.</li>';
-    }
-  } catch (e) {
-    const ul = document.getElementById('sec-recent');
-    if (ul) ul.innerHTML = '<li class="muted">Failed to load SEC filings.</li>';
-    console.error(e);
-  }
-}
-window.addEventListener('DOMContentLoaded', loadSecRecent);
-</script>
-
-
-
 </body>
 </html>

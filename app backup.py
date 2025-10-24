@@ -1,6 +1,7 @@
 ﻿# uvicorn app:app --reload
 import os, time, asyncio, re
 from datetime import datetime
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 
+from fastapi import FastAPI, Request, Query, HTTPException  # (you already have this line)
+
+from dotenv import load_dotenv
+load_dotenv("api.env")
+
+
+
 # ----- FastAPI + templates/static -----
 app = FastAPI()
 os.makedirs("templates", exist_ok=True)
@@ -22,6 +30,24 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
 templates = Jinja2Templates(directory="templates")
+
+# ==================== Page routes ====================
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse("a.home.html", {"request": request})
+
+@app.get("/congress", response_class=HTMLResponse)
+def congress(request: Request):
+    return templates.TemplateResponse("congress.html", {"request": request})
+
+@app.get("/portfolio", response_class=HTMLResponse)
+def portfolio(request: Request):
+    return templates.TemplateResponse("portfolio.html", {"request": request})
+
+@app.get("/api/ping")
+def ping():
+    return {"ok": True}
+
 
 # ---------- Home: Major Headlines (CNBC only) ----------
 HOME_NEWS_CACHE = {"ts": 0, "payload": None}
@@ -55,24 +81,10 @@ def home_major(limit: int = 20):
     HOME_NEWS_CACHE.update(ts=now, payload=payload)
     return payload
 
-# ==================== Page routes ====================
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    return templates.TemplateResponse("a.home.html", {"request": request})
+# ================= Macro (FRED) =================
 
-@app.get("/congress", response_class=HTMLResponse)
-def congress(request: Request):
-    return templates.TemplateResponse("congress.html", {"request": request})
 
-@app.get("/portfolio", response_class=HTMLResponse)
-def portfolio(request: Request):
-    return templates.TemplateResponse("portfolio.html", {"request": request})
-
-@app.get("/api/ping")
-def ping():
-    return {"ok": True}
-
-# ========= SEC (Home feed only) ======================
+# ========= SEC (Home feed + per-ticker browse) ======================
 SEC_HEADERS = {
     "User-Agent": "FountainAI/1.0 (fountain-ai.com) Contact: admin@fountain-ai.com",
     "Accept": "application/json, text/xml, application/atom+xml;q=0.9,*/*;q=0.8",
@@ -112,7 +124,7 @@ def sec_recent(forms: str = "10-K,10-Q,8-K", count: int = 50):
             if not atom_form:
                 m = re.search(r"\b(10-K|10-Q|8-K)\b", title, re.I)
                 if m: atom_form = m.group(1).upper()
-            if not atom_form or (wants and atom_form not in wants): 
+            if not atom_form or (wants and atom_form not in wants):
                 continue
             company = title.split(" - ", 1)[-1].strip() if " - " in title else title
             filings.append({
@@ -122,7 +134,7 @@ def sec_recent(forms: str = "10-K,10-Q,8-K", count: int = 50):
                 "url": link,
                 "source": "SEC EDGAR"
             })
-            if len(filings) >= count: 
+            if len(filings) >= count:
                 break
     except Exception as e:
         print("SEC Atom error:", repr(e))
@@ -138,10 +150,10 @@ def sec_recent(forms: str = "10-K,10-Q,8-K", count: int = 50):
                 rows = soup.select("table tr")[1:]
                 for tr in rows:
                     tds = tr.find_all("td")
-                    if len(tds) < 3: 
+                    if len(tds) < 3:
                         continue
                     form = _clean(tds[0].get_text()).upper()
-                    if wants and form not in wants: 
+                    if wants and form not in wants:
                         continue
                     comp_a = tds[2].find("a")
                     company = _clean(comp_a.text) if comp_a else _clean(tds[2].get_text())
@@ -156,9 +168,9 @@ def sec_recent(forms: str = "10-K,10-Q,8-K", count: int = 50):
                         "url": link,
                         "source": "SEC EDGAR"
                     })
-                    if len(filings) >= count: 
+                    if len(filings) >= count:
                         break
-                if len(filings) >= count: 
+                if len(filings) >= count:
                     break
         except Exception as e:
             print("SEC HTML scrape error:", repr(e))
@@ -167,7 +179,159 @@ def sec_recent(forms: str = "10-K,10-Q,8-K", count: int = 50):
     HOME_SEC_CACHE.update(ts=now, payload=payload)
     return payload
 
-# ================== Congress scraping ==================
+# --- Enrich filings with per-row descriptions from the company browse page (HTML) ---
+DESC_CACHE = {}   # key: cik_int -> {"ts":..., "map": {...}}
+DESC_TTL = 300
+
+def _acc_from_link(url: str) -> str | None:
+    m = re.search(r"/data/\d+/(\d{10,})/", url or "")
+    if m:
+        return m.group(1)
+    m = re.findall(r"(\d{10,})", url or "")
+    return max(m, key=len) if m else None
+
+def _company_browse_descriptions(cik_num: int, count: int = 200) -> dict[str, str]:
+    """Scrape the 'getcompany' HTML table; return {accession_no_dashes: description}."""
+    now = time.time()
+    cached = DESC_CACHE.get(cik_num)
+    if cached and now - cached["ts"] < DESC_TTL:
+        return cached["map"]
+
+    url = "https://www.sec.gov/cgi-bin/browse-edgar"
+    params = {
+        "action": "getcompany",
+        "CIK": str(int(cik_num)),
+        "owner": "exclude",
+        "count": str(min(max(20, count), 400)),
+    }
+    desc_map: dict[str, str] = {}
+    try:
+        rr = requests.get(url, headers=SEC_HEADERS, params=params, timeout=15)
+        rr.raise_for_status()
+        soup = BeautifulSoup(rr.text, "html.parser")
+        rows = soup.select("table.tableFile2 tr")[1:] or soup.select("table tr")[1:]
+        for tr in rows:
+            tds = tr.find_all("td")
+            if len(tds) < 3:
+                continue
+            docs_a = tds[1].find("a", href=True) if len(tds) > 1 else None
+            desc_txt = _clean(tds[2].get_text())
+            if not docs_a:
+                continue
+            href = docs_a["href"]
+            if href and not href.startswith("http"):
+                href = f"https://www.sec.gov{href}"
+            acc = _acc_from_link(href)
+            if acc:
+                desc_map[acc] = desc_txt
+    except Exception as e:
+        print("company browse description scrape error:", repr(e))
+
+    DESC_CACHE[cik_num] = {"ts": now, "map": desc_map}
+    return desc_map
+
+# --- Per-ticker Atom feed + join with descriptions (used by /portfolio) ---
+@lru_cache(maxsize=1)
+def _ticker_map() -> dict[str, int]:
+    url = "https://www.sec.gov/files/company_tickers.json"
+    r = requests.get(url, headers=SEC_HEADERS, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    return {row["ticker"].upper(): int(row["cik_str"]) for _, row in data.items()}
+
+def _sec_company_atom(cik_num: int, count: int = 200):
+    """Company filings Atom feed (same source as SEC company page)."""
+    url = "https://www.sec.gov/cgi-bin/browse-edgar"
+    params = {
+        "action": "getcompany",
+        "CIK": str(int(cik_num)),
+        "owner": "exclude",
+        "count": str(min(max(20, count), 400)),
+        "output": "atom",
+    }
+    r = requests.get(url, headers=SEC_HEADERS, params=params, timeout=15)
+    r.raise_for_status()
+    return feedparser.parse(r.content)
+
+def _parse_atom_entries(entries, wants: set[str], company_fallback: str):
+    out = []
+    for ent in (entries or []):
+        title = (ent.get("title") or "").strip()
+        link  = ent.get("link")
+        when  = ent.get("updated") or ent.get("published")
+        # Prefer explicit tags; fallback to title
+        form = None
+        for c in (ent.get("tags") or ent.get("categories") or []):
+            term = (c.get("term") or "").upper()
+            if term in {"10-K","10-Q","8-K"}:
+                form = term; break
+        if not form:
+            m = re.search(r"\b(10-K|10-Q|8-K)\b", title, re.I)
+            if m: form = m.group(1).upper()
+        if not form or (wants and form not in wants):
+            continue
+        company = title.split(" - ", 1)[-1].strip() if " - " in title else company_fallback
+        out.append({
+            "company": company,
+            "form": form,
+            "filed_at": when,
+            "url": link,
+            "source": "SEC EDGAR",
+        })
+    return out
+
+@app.get("/api/sec/filings-browse-for")
+def sec_filings_browse_batch(
+    tickers: str = Query(..., description="comma-separated tickers"),
+    forms: str = "10-K,10-Q,8-K",
+    count_per: int = 200
+):
+    """
+    For each ticker:
+      1) Pull company Atom feed -> form/date/url
+      2) Scrape company browse HTML once -> accession -> short description
+      3) Join by accession extracted from the Atom link (adds 'desc')
+    """
+    wants = {w.strip().upper() for w in forms.split(",") if w.strip()}
+    mp = _ticker_map()
+    ticks = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    by_ticker: dict[str, list[dict]] = {}
+
+    for t in ticks:
+        cik = mp.get(t)
+        if not cik:
+            by_ticker[t] = []
+            continue
+
+        try:
+            feed = _sec_company_atom(cik_num=cik, count=count_per)
+            rows = _parse_atom_entries(feed.entries, wants, company_fallback=t)
+            desc_map = _company_browse_descriptions(cik, count=count_per)
+
+            for r in rows:
+                acc = _acc_from_link(r.get("url") or "")
+                if acc and acc in desc_map:
+                    r["desc"] = desc_map[acc]
+        except Exception as e:
+            print(f"[SEC browse] {t} failed:", repr(e))
+            rows = []
+
+        def _datekey(x):
+            try:
+                return pd.to_datetime(x.get("filed_at")).to_pydatetime()
+            except Exception:
+                return datetime.min
+        rows.sort(key=_datekey, reverse=True)
+        by_ticker[t] = rows
+
+        time.sleep(0.25)  # tiny politeness pause
+
+    return {"by_ticker": by_ticker}
+
+#====================Sector Stock Prices
+
+
+# ================== Congress scraping trades==================
 WEEK_SECONDS = 7 * 24 * 60 * 60
 
 @app.on_event("startup")
@@ -197,7 +361,7 @@ def _load_congress_trades() -> pd.DataFrame:
     senate["Chamber"] = "Senate"; house["Chamber"]  = "House"
     df = pd.concat([senate, house], ignore_index=True)
     df.columns = [c.strip() for c in df.columns]
-    if "Unnamed: 6" in df.columns: 
+    if "Unnamed: 6" in df.columns:
         df = df.rename(columns={"Unnamed: 6": "Price Change %"})
     def trans_type(s): return s.split(" ")[0] if isinstance(s, str) else None
     def low_amt(s):
@@ -263,37 +427,3 @@ def portfolio_news(tickers: str = Query(..., description="comma separated ticker
             seen.add(a["url"]); out.append(a)
     return {"count": len(out), "articles": out[:100]}
 
-@app.get("/api/forecast/{ticker}")
-def forecast_one(ticker: str, horizon: int = 252):
-    ticker = ticker.upper()
-    df = yf.download(ticker, period="5y", interval="1d", auto_adjust=True, progress=False)
-    if df.empty: 
-        raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
-    s = df["Close"].dropna()
-    dates = s.index.to_pydatetime().tolist()
-    y = s.values.astype(float)
-
-    window = min(60, len(y)//6 or 30)
-    backtest = pd.Series(y).rolling(window=window, min_periods=1).mean().values
-
-    x = np.arange(len(y))
-    A = np.vstack([x, np.ones_like(x)]).T
-    m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-
-    future_x = np.arange(len(y), len(y)+horizon)
-    fc = m*future_x + b
-    resid = y - (m*x+b)
-    sd = np.std(resid) if len(resid) > 1 else 0.0
-
-    return {
-        "dates": [d.strftime("%Y-%m-%d") for d in dates],
-        "price": [float(v) for v in y],
-        "forecast": [float(v) for v in fc],
-        "forecast_upper": [float(v) for v in fc + sd],
-        "forecast_lower": [float(v) for v in fc - sd],
-        "dates_pe": [d.strftime("%Y-%m-%d") for d in dates],
-        "eps_ttm": [None]*len(dates), "pe_ttm": [None]*len(dates),
-        "backtest": [float(v) for v in backtest],
-        "backtest_mape": float("nan"), "backtest_mae": float("nan"),
-        "backtest_coverage": float("nan"),
-    }

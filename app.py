@@ -2,6 +2,7 @@
 import os, time, asyncio, re
 from datetime import datetime
 from functools import lru_cache
+from io import StringIO
 
 import numpy as np
 import pandas as pd
@@ -11,10 +12,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
+
+from dotenv import load_dotenv
+load_dotenv("api.env")
 
 # ----- FastAPI + templates/static -----
 app = FastAPI()
@@ -23,6 +27,23 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
 templates = Jinja2Templates(directory="templates")
+
+# ==================== Page routes ====================
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse("a.home.html", {"request": request})
+
+@app.get("/congress", response_class=HTMLResponse)
+def congress(request: Request):
+    return templates.TemplateResponse("congress.html", {"request": request})
+
+@app.get("/portfolio", response_class=HTMLResponse)
+def portfolio(request: Request):
+    return templates.TemplateResponse("portfolio.html", {"request": request})
+
+@app.get("/api/ping")
+def ping():
+    return {"ok": True}
 
 # ---------- Home: Major Headlines (CNBC only) ----------
 HOME_NEWS_CACHE = {"ts": 0, "payload": None}
@@ -55,23 +76,6 @@ def home_major(limit: int = 20):
     payload = {"count": len(arts), "articles": arts}
     HOME_NEWS_CACHE.update(ts=now, payload=payload)
     return payload
-
-# ==================== Page routes ====================
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    return templates.TemplateResponse("a.home.html", {"request": request})
-
-@app.get("/congress", response_class=HTMLResponse)
-def congress(request: Request):
-    return templates.TemplateResponse("congress.html", {"request": request})
-
-@app.get("/portfolio", response_class=HTMLResponse)
-def portfolio(request: Request):
-    return templates.TemplateResponse("portfolio.html", {"request": request})
-
-@app.get("/api/ping")
-def ping():
-    return {"ok": True}
 
 # ========= SEC (Home feed + per-ticker browse) ======================
 SEC_HEADERS = {
@@ -317,7 +321,9 @@ def sec_filings_browse_batch(
 
     return {"by_ticker": by_ticker}
 
-# ================== Congress scraping ==================
+#====================Sector Stock Prices
+
+# ================== Congress scraping trades ==================
 WEEK_SECONDS = 7 * 24 * 60 * 60
 
 @app.on_event("startup")
@@ -412,38 +418,3 @@ def portfolio_news(tickers: str = Query(..., description="comma separated ticker
         if a["url"] and a["url"] not in seen:
             seen.add(a["url"]); out.append(a)
     return {"count": len(out), "articles": out[:100]}
-
-@app.get("/api/forecast/{ticker}")
-def forecast_one(ticker: str, horizon: int = 252):
-    ticker = ticker.upper()
-    df = yf.download(ticker, period="5y", interval="1d", auto_adjust=True, progress=False)
-    if df.empty:
-        raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
-    s = df["Close"].dropna()
-    dates = s.index.to_pydatetime().tolist()
-    y = s.values.astype(float)
-
-    window = min(60, len(y)//6 or 30)
-    backtest = pd.Series(y).rolling(window=window, min_periods=1).mean().values
-
-    x = np.arange(len(y))
-    A = np.vstack([x, np.ones_like(x)]).T
-    m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-
-    future_x = np.arange(len(y), len(y)+horizon)
-    fc = m*future_x + b
-    resid = y - (m*x+b)
-    sd = np.std(resid) if len(resid) > 1 else 0.0
-
-    return {
-        "dates": [d.strftime("%Y-%m-%d") for d in dates],
-        "price": [float(v) for v in y],
-        "forecast": [float(v) for v in fc],
-        "forecast_upper": [float(v) for v in fc + sd],
-        "forecast_lower": [float(v) for v in fc - sd],
-        "dates_pe": [d.strftime("%Y-%m-%d") for d in dates],
-        "eps_ttm": [None]*len(dates), "pe_ttm": [None]*len(dates),
-        "backtest": [float(v) for v in backtest],
-        "backtest_mape": float("nan"), "backtest_mae": float("nan"),
-        "backtest_coverage": float("nan"),
-    }

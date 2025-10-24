@@ -10,3 +10,8 @@ yfinance
 pandas
 numpy
 feedparser
+pandas-datareader
+numpy
+SQLAlchemy>=2.0
+psycopg2-binary
+python-dotenv

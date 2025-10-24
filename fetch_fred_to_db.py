@@ -1,5 +1,15 @@
 ﻿#!/usr/bin/env python3
 import os
+
+# --- Shim for Python 3.12+ (stdlib removed 'distutils'); pandas-datareader 0.10 still imports it
+try:
+    import distutils  # noqa: F401
+except ModuleNotFoundError:
+    import importlib, sys
+    import setuptools  # ensure present from requirements.txt
+    sys.modules["distutils"] = importlib.import_module("setuptools._distutils")
+# ------------------------------------------------------------------------------
+
 from datetime import datetime
 import pandas as pd
 from pandas_datareader import data as pdr

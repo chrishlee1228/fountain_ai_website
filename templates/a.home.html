@@ -83,5 +83,47 @@
 
     window.addEventListener('DOMContentLoaded', loadMajor);
   </script>
+
+
+<section class="panel">
+  <h2>U.S. Macroeconomic Indicators</h2>
+  <canvas id="macroChart"></canvas>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
+<script>
+async function drawMacroChart() {
+  const series = "Unemployment_Rate";
+  const res = await fetch(`/api/fred/${series}`);
+  const data = await res.json();
+  const labels = data.map(d => d.date);
+  const values = data.map(d => d[series]);
+
+  const ctx = document.getElementById("macroChart").getContext("2d");
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "U.S. Unemployment Rate (%)",
+        data: values,
+        borderColor: "#7cb8ff",
+        borderWidth: 2,
+        fill: false,
+      }]
+    },
+    options: {
+      scales: {
+        x: { ticks: { color: "#aab4cc" } },
+        y: { ticks: { color: "#aab4cc" } }
+      },
+      plugins: { legend: { labels: { color: "#e9ecf1" } } }
+    }
+  });
+}
+drawMacroChart();
+</script>
+
 </body>
 </html>

@@ -6,12 +6,37 @@
   <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{ --bg:#0b1020; --panel:#121832; --text:#e9ecf1; --muted:#aab4cc; --brand:#7cb8ff; --border:rgba(255,255,255,.08) }
+    :root {
+      --bg:#0b1020;
+      --panel:#121832;
+      --text:#e9ecf1;
+      --muted:#aab4cc;
+      --brand:#7cb8ff;
+      --border:rgba(255,255,255,.08);
+    }
     *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,Segoe UI,Roboto,Arial}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font:16px/1.5 system-ui,Segoe UI,Roboto,Arial;
+    }
     a{color:var(--text);text-decoration:none}
-    nav{background:#0b132b;border-bottom:1px solid var(--border)}
-    .nav-inner{max-width:1200px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
+    nav{
+      background:#0b132b;
+      border-bottom:1px solid var(--border);
+      position:sticky;
+      top:0;
+      z-index:100;
+    }
+    .nav-inner{
+      max-width:1200px;
+      margin:0 auto;
+      padding:12px 20px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+    }
     .brand{display:flex;align-items:center;font-weight:800;letter-spacing:.3px}
     .brand img{height:28px;margin-right:8px}
     .tabs a{opacity:.85;margin-left:18px}
@@ -19,18 +44,70 @@
     .wrap{max-width:1200px;margin:0 auto;padding:24px}
     h1{margin:10px 0 16px}
     .grid{display:grid;grid-template-columns:1fr;gap:18px}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:16px;
+      box-shadow:0 6px 24px rgba(0,0,0,.25);
+    }
     .muted{color:var(--muted)}
-    .btn{display:inline-block;background:#1a2250;border:1px solid var(--border);padding:.6rem .9rem;border-radius:10px;margin-right:8px}
-    ul.news{ max-height:480px; overflow:auto; margin:0; padding-left:1.1rem }
-    ul.news li{ margin:8px 0 }
+    .btn{
+      display:inline-block;
+      background:#1a2250;
+      border:1px solid var(--border);
+      padding:.6rem .9rem;
+      border-radius:10px;
+      margin-right:8px;
+    }
+    ul.news{max-height:480px;overflow:auto;margin:0;padding-left:1.1rem}
+    ul.news li{margin:8px 0}
+
+    /* ===== Macro section scrollable ===== */
+    .macro-section {
+      max-width:1200px;
+      margin:0 auto;
+      padding:24px;
+      height:80vh;             /* fixed visible height */
+      overflow-y:auto;         /* vertical scroll */
+      overflow-x:hidden;
+      border-top:1px solid var(--border);
+      border-bottom:1px solid var(--border);
+      scrollbar-color:#3a4666 #0b1020; /* optional dark scrollbar */
+    }
+
+    .chart-grid {
+      display:grid;
+      grid-template-columns:1fr;
+      gap:18px;
+      margin-top:20px;
+    }
+    .chart-card {
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:0 6px 24px rgba(0,0,0,.25);
+    }
+    .chart-card h4 {
+      font-size:14px;
+      margin:6px 0 10px;
+      color:var(--text);
+    }
+    .chart-scroll canvas {
+      height:260px;
+      width:100%;
+      display:block;
+    }
   </style>
 </head>
+
 <body>
   <nav>
     <div class="nav-inner">
       <div class="brand">
-        <img src="/static/company_logo.png" alt="Fountain AI logo"><span>Fountain AI - Market Intelligence That Matters</span>
+        <img src="/static/company_logo.png" alt="Fountain AI logo">
+        <span>Fountain AI - Market Intelligence That Matters</span>
       </div>
       <div class="tabs">
         <a href="/" class="active">Home</a>
@@ -42,23 +119,16 @@
 
   <div class="wrap">
     <h1>Today</h1>
-
     <div class="grid">
-      <!-- Headlines -->
       <div class="card">
         <h3>Major Headlines</h3>
         <ul class="news" id="news-major"></ul>
         <div class="muted">Source: CNBC</div>
       </div>
     </div>
-
-    <div class="section" style="margin-top:20px">
-      <a class="btn" href="/congress">Go to Congress Trades</a>
-      <a class="btn" href="/portfolio">Go to Personalized Portfolio</a>
-    </div>
   </div>
 
-  <!-- Scripts -->
+  <!-- Major headlines script -->
   <script>
     async function loadMajor() {
       try {
@@ -68,62 +138,97 @@
         ul.innerHTML = '';
         (data.articles || []).slice(0, 12).forEach(a => {
           const li = document.createElement('li');
-          li.innerHTML = `<a href="${a.url}" target="_blank" rel="noopener noreferrer">${a.title}</a>
+          li.innerHTML = `<a href="${a.url}" target="_blank">${a.title}</a>
                           <div class="muted">${a.source} • ${new Date(a.published_at || Date.now()).toLocaleString()}</div>`;
           ul.appendChild(li);
         });
-        if (!data.articles || !data.articles.length) {
-          ul.innerHTML = '<li class="muted">No headlines available.</li>';
-        }
-      } catch (e) {
+      } catch {
         document.getElementById('news-major').innerHTML = '<li class="muted">Failed to load headlines.</li>';
-        console.error(e);
       }
     }
-
     window.addEventListener('DOMContentLoaded', loadMajor);
   </script>
 
+  <!-- ===== Macro Section (vertically scrollable) ===== -->
+  <section class="macro-section">
+    <h2>U.S. Macroeconomic Indicators</h2>
+    <div class="chart-grid" id="macroCharts"></div>
+  </section>
 
-<section class="panel">
-  <h2>U.S. Macroeconomic Indicators</h2>
-  <canvas id="macroChart"></canvas>
-</section>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script>
+  async function drawMacroCharts() {
+    const seriesList = [
+      { id: "Real_GDP",                 label: "Real GDP" },
+      { id: "Unemployment_Rate",        label: "Unemployment Rate (%)" },
+      { id: "Nonfarm_Payrolls",         label: "Nonfarm Payrolls" },
+      { id: "CPI_All_Items",            label: "CPI All Items (Index)" },
+      { id: "PCE_Price_Index",          label: "PCE Price Index (Index)" },
+      { id: "Industrial_Production",    label: "Industrial Production (Index)" },
+      { id: "Retail_Sales",             label: "Retail Sales" },
+      { id: "Revolving_Consumer_Credit",label: "Revolving Consumer Credit" },
+      { id: "Housing_Starts",           label: "Housing Starts" },
+      { id: "Fed_Funds_Rate",           label: "Fed Funds Rate (%)" },
+      { id: "Treasury_10Y_Yield",       label: "10Y Treasury Yield (%)" },
+      { id: "Job_Openings_JOLTS",       label: "Job Openings (JOLTS)" }
+    ];
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    const MONTHS = 12; // 
+    const container = document.getElementById("macroCharts");
 
-<script>
-async function drawMacroChart() {
-  const series = "Unemployment_Rate";
-  const res = await fetch(`/api/fred/${series}`);
-  const data = await res.json();
-  const labels = data.map(d => d.date);
-  const values = data.map(d => d[series]);
+    for (const s of seriesList) {
+      const card = document.createElement("div");
+      card.className = "chart-card";
+      card.innerHTML = `<h4>${s.label}</h4><div class="chart-scroll"><canvas id="${s.id}"></canvas></div>`;
+      container.appendChild(card);
 
-  const ctx = document.getElementById("macroChart").getContext("2d");
-  new Chart(ctx, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [{
-        label: "U.S. Unemployment Rate (%)",
-        data: values,
-        borderColor: "#7cb8ff",
-        borderWidth: 2,
-        fill: false,
-      }]
-    },
-    options: {
-      scales: {
-        x: { ticks: { color: "#aab4cc" } },
-        y: { ticks: { color: "#aab4cc" } }
-      },
-      plugins: { legend: { labels: { color: "#e9ecf1" } } }
+      try {
+        const res = await fetch(`/api/fred/${s.id}?months=${MONTHS}`);
+        const data = await res.json();
+        const labels = data.map(d => d.date);
+        const values = data.map(d => d[s.id]);
+
+        const ctx = document.getElementById(s.id).getContext("2d");
+        new Chart(ctx, {
+          type: "line",
+          data: {
+            labels,
+            datasets: [{
+              label: s.label,
+              data: values,
+              borderColor: "#7cb8ff",
+              borderWidth: 2,
+              pointRadius: 1,
+              tension: 0.25,
+              fill: false
+            }]
+          },
+          options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            scales: {
+              x: {
+                ticks: { color: "#aab4cc", maxTicksLimit: 6 },
+                grid:  { color: "rgba(255,255,255,0.05)" }
+              },
+              y: {
+                ticks: { color: "#aab4cc" },
+                grid:  { color: "rgba(255,255,255,0.05)" }
+              }
+            },
+            plugins: {
+              legend: { labels: { color: "#e9ecf1" } },
+              tooltip: { mode: "index", intersect: false }
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Chart error:", s.id, err);
+        card.innerHTML += `<div class="muted" style="padding:8px">Failed to load ${s.label}</div>`;
+      }
     }
-  });
-}
-drawMacroChart();
-</script>
-
+  }
+  window.addEventListener("DOMContentLoaded", drawMacroCharts);
+  </script>
 </body>
 </html>

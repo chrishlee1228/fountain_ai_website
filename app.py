@@ -1,15 +1,19 @@
 ﻿# uvicorn app:app --reload
-# Import necessary modules
-import os  # Ensure os is imported at the top
+import os
+try:
+    from dotenv import load_dotenv
+    # Prefer api.env; fallback to .env
+    if os.path.exists("api.env"):
+        load_dotenv("api.env")
+    else:
+        load_dotenv()
+except Exception:
+    pass
 
-print("CWD:", os.getcwd(), "api.env exists?", os.path.exists("api.env"))
-print("DB URL prefix:", (os.getenv("DATABASE_URL") or "")[:40])
-
-import time, asyncio, re
+import os, time, asyncio, re
 from datetime import datetime
 from functools import lru_cache
 from io import StringIO
-import yt_dlp
 
 import numpy as np
 import pandas as pd
@@ -48,40 +52,6 @@ def portfolio(request: Request):
 @app.get("/api/ping")
 def ping():
     return {"ok": True}
-
-@app.get("/api/youtube/subtitles")
-async def youtube_subtitles(tickers: str = Query(..., description="comma-separated tickers")):
-    """
-    Get subtitles of the most recent YouTube videos for each stock ticker.
-    """
-    def get_youtube_subtitles(query):
-        # Search for the YouTube videos
-        ydl_opts = {
-            'quiet': True,
-            'writesubtitles': True,
-            'subtitleslangs': ['en'],  # English subtitles
-            'format': 'bestaudio/best',  # Best quality video
-            'outtmpl': 'downloads/%(id)s.%(ext)s',
-        }
-
-        # Fetch video URL and subtitles
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            result = ydl.extract_info(f"ytsearch:{query} stock analysis", download=False)
-            video_url = result['entries'][0]['url'] if result.get('entries') else None
-            subtitles = result['entries'][0].get('subtitles', {}).get('en', [])
-
-            return {'video_url': video_url, 'subtitles': subtitles}
-
-    tickers = [s.strip().upper() for s in tickers.split(",") if s.strip()]
-    video_data = {}
-
-    for ticker in tickers:
-        video_data[ticker] = get_youtube_subtitles(ticker)
-
-    return video_data
-
-# ----- Your other routes and functions -----
-
 
 # ---------- Home: Major Headlines (CNBC only) ----------
 HOME_NEWS_CACHE = {"ts": 0, "payload": None}

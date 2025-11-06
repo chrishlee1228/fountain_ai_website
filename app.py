@@ -470,3 +470,4 @@ def get_fred_series(series: str, months: int = 60):
          series: float(r[1]) if r[1] is not None else None}
         for r in rows
     ])
+

@@ -1,7 +1,19 @@
 ﻿# uvicorn app:app --reload
+import os
+try:
+    from dotenv import load_dotenv
+    # Prefer api.env; fallback to .env
+    if os.path.exists("api.env"):
+        load_dotenv("api.env")
+    else:
+        load_dotenv()
+except Exception:
+    pass
+
 import os, time, asyncio, re
 from datetime import datetime
 from functools import lru_cache
+from io import StringIO
 
 import numpy as np
 import pandas as pd
@@ -11,17 +23,10 @@ import requests
 from bs4 import BeautifulSoup
 
 from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
-
-from fastapi import FastAPI, Request, Query, HTTPException  # (you already have this line)
-
-from dotenv import load_dotenv
-load_dotenv("api.env")
-
-
 
 # ----- FastAPI + templates/static -----
 app = FastAPI()
@@ -47,7 +52,6 @@ def portfolio(request: Request):
 @app.get("/api/ping")
 def ping():
     return {"ok": True}
-
 
 # ---------- Home: Major Headlines (CNBC only) ----------
 HOME_NEWS_CACHE = {"ts": 0, "payload": None}
@@ -80,9 +84,6 @@ def home_major(limit: int = 20):
     payload = {"count": len(arts), "articles": arts}
     HOME_NEWS_CACHE.update(ts=now, payload=payload)
     return payload
-
-# ================= Macro (FRED) =================
-
 
 # ========= SEC (Home feed + per-ticker browse) ======================
 SEC_HEADERS = {
@@ -330,8 +331,7 @@ def sec_filings_browse_batch(
 
 #====================Sector Stock Prices
 
-
-# ================== Congress scraping trades==================
+# ================== Congress scraping trades ==================
 WEEK_SECONDS = 7 * 24 * 60 * 60
 
 @app.on_event("startup")
@@ -427,3 +427,46 @@ def portfolio_news(tickers: str = Query(..., description="comma separated ticker
             seen.add(a["url"]); out.append(a)
     return {"count": len(out), "articles": out[:100]}
 
+# =============== FRED Data Retrieval ==============
+from sqlalchemy import create_engine, text
+from fastapi.responses import JSONResponse
+import os
+import pandas as pd  # optional here, but fine to keep
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL, pool_pre_ping=True) if DATABASE_URL else None
+
+FRED_COLUMNS = [
+    "Real_GDP","Unemployment_Rate","Nonfarm_Payrolls","CPI_All_Items","PCE_Price_Index",
+    "Industrial_Production","Retail_Sales","Revolving_Consumer_Credit","Housing_Starts",
+    "Fed_Funds_Rate","Treasury_10Y_Yield","Job_Openings_JOLTS"
+]
+
+@app.get("/api/fred/{series}")
+def get_fred_series(series: str, months: int = 60):
+    # Guard: DB not configured locally
+    if engine is None:
+        return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=500)
+
+    # Guard: unknown column
+    if series not in FRED_COLUMNS:
+        return JSONResponse({"error": f"unknown series '{series}'"}, status_code=400)
+
+    q = text(f'''
+        SELECT date, "{series}" AS value
+        FROM fred_all_series
+        WHERE "{series}" IS NOT NULL
+        ORDER BY date DESC
+        LIMIT :limit
+    ''')
+
+    with engine.begin() as conn:
+        rows = conn.execute(q, {"limit": months}).fetchall()
+
+    # chronological order for chart
+    rows = list(reversed(rows))
+    return JSONResponse([
+        {"date": r[0].strftime("%Y-%m-%d"),
+         series: float(r[1]) if r[1] is not None else None}
+        for r in rows
+    ])

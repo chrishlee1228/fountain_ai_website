@@ -1,8 +1,8 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Fountain AI - Market Insights</title>
+  <title>Fountain AI - Congress Intelligence</title>
   <link rel="icon" type="image/png" href="/static/company_logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -14,39 +14,61 @@
     *{box-sizing:border-box}
     html,body{height:auto;margin:0}
     body{background:var(--bg);color:var(--text);font:16px/1.5 system-ui,Segoe UI,Roboto,Arial}
-    a{color:var(--text);text-decoration:none}
+    a{color:var(--brand);text-decoration:none}
+    a:hover{text-decoration:underline}
     .wrap{max-width:1200px;margin:0 auto;padding:24px}
     nav{background:#0b132b;border-bottom:1px solid var(--border)}
     .nav-inner{max-width:1200px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
-    .brand{
-      display:flex;
-      align-items:center;
-      font-weight:800;
-      letter-spacing:.3px;
-    }
-    .brand img {
-      height: 28px;        /* adjust logo size */
-      width: auto;
-      margin-right: 8px;   /* space between logo and text */
-      display: block;      /* removes tiny bottom gap */
-      object-fit: contain; /* keeps proportions perfect */
-    }
-
-    .tabs a{opacity:.85;margin-left:18px}
+    .brand{display:flex;align-items:center;font-weight:800;letter-spacing:.3px}
+    .brand img{height:28px;width:auto;margin-right:8px;display:block;object-fit:contain}
+    .tabs a{opacity:.85;margin-left:18px;color:var(--text)}
     .tabs a.active{opacity:1;color:var(--brand)}
     h1{margin:12px 0 4px}
+    h2{margin:32px 0 16px;font-size:1.5rem}
     .lead{color:var(--muted);margin:0 0 10px}
     #stamp{color:var(--muted);font-size:.9rem;margin:6px 0 18px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-    @media (max-width:1000px){ .row{grid-template-columns:1fr} }
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px}
+    @media (max-width:1000px){.row{grid-template-columns:1fr}}
     .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
     .card h3{margin:6px 0 10px}
-    /* HARD STOP on chart height + avoid resize loops */
     .chart-box{position:relative;height:420px;overflow:hidden}
     canvas{display:block;width:100% !important;height:100% !important}
+    
+    /* Laws section */
+    .laws-grid{display:grid;gap:16px}
+    .law-item{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:16px;
+      transition:border-color 0.2s;
+    }
+    .law-item:hover{border-color:var(--brand)}
+    .law-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:8px}
+    .law-number{color:var(--brand);font-weight:600;font-size:.9rem}
+    .law-date{color:var(--muted);font-size:.85rem}
+    .law-title{font-weight:600;margin-bottom:8px;color:var(--text)}
+    .law-bill{color:var(--muted);font-size:.9rem;margin-bottom:8px}
+    .law-summary{color:var(--muted);font-size:.9rem;line-height:1.6;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+    .law-summary-toggle{
+      color:var(--brand);
+      cursor:pointer;
+      font-size:.85rem;
+      margin-top:8px;
+      display:inline-block;
+    }
+    .law-summary-toggle:hover{text-decoration:underline}
+    .law-summary-text{
+      display:none;
+      max-height:200px;
+      overflow-y:auto;
+    }
+    .law-summary-text.show{display:block}
+    
     footer{color:var(--muted);font-size:.9rem;margin-top:20px}
     button{background:#1a2250;border:1px solid var(--border);border-radius:10px;padding:.45rem .7rem;color:#fff;cursor:pointer}
     button:hover{filter:brightness(1.1)}
+    .loading{color:var(--muted);font-style:italic}
   </style>
 </head>
 <body>
@@ -59,14 +81,14 @@
     </div>
     <div class="tabs">
       <a href="/">Home</a>
-      <a href="/congress" class="active">Congress Trades</a>
+      <a href="/congress" class="active">Congress</a>
       <a href="/portfolio">My Portfolio</a>
     </div>
   </div>
 </nav>
 
   <div class="wrap">
-    <!-- Page heading + short description -->
+    <!-- Congress Trades Section -->
     <h1>Congress Trades Dashboard</h1>
     <p class="lead">
       Aggregated recent <strong>Senate &amp; House trade disclosures</strong>,
@@ -76,7 +98,7 @@
 
     <div id="stamp">Loading congress trade charts…</div>
     <div style="margin-bottom:14px">
-      <button id="refreshBtn" title="Refetch data">Refresh</button>
+      <button id="refreshBtn" title="Refetch data">Refresh Trades</button>
       <a href="/api/congress/top-bottom" target="_blank"><button title="View raw JSON">View JSON</button></a>
     </div>
 
@@ -91,6 +113,22 @@
       </div>
     </div>
 
+    <!-- Enacted Laws Section -->
+    <h2>Recently Enacted Laws (119th Congress)</h2>
+    <p class="lead">
+      Bills that have been signed into law, with summaries and dates.
+    </p>
+    
+    <div id="laws-stamp" class="loading">Loading enacted laws…</div>
+    <div style="margin-bottom:14px">
+      <button id="refreshLawsBtn" title="Refetch enacted laws">Refresh Laws</button>
+      <a href="/api/congress/enacted-laws" target="_blank"><button title="View raw JSON">View Laws JSON</button></a>
+    </div>
+
+    <div id="laws-container" class="laws-grid">
+      <!-- Laws will be populated here -->
+    </div>
+
     <footer>© <span id="year"></span> Fountain AI</footer>
   </div>
 
@@ -102,6 +140,7 @@
       return sign + "$" + Math.abs(v).toLocaleString();
     };
 
+    // Load congress trades
     async function loadData() {
       const stamp = document.getElementById('stamp');
       try {
@@ -122,8 +161,8 @@
 
         const commonOpts = {
           responsive: true,
-          maintainAspectRatio: false,  // respect the .chart-box height
-          animation: false,            // avoid resize loops in some browsers
+          maintainAspectRatio: false,
+          animation: false,
           plugins: {
             legend: { display: true },
             tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${currency(ctx.parsed.y)}` } }
@@ -144,7 +183,6 @@
           options: commonOpts
         });
 
-        // Give the negative chart a touch of headroom so it doesn't try to expand
         const minBot = Math.min(0, ...botValues);
         const botOpts = {
           ...commonOpts,
@@ -161,15 +199,105 @@
         });
       } catch (e) {
         console.error(e);
-        stamp.textContent = 'Failed to load data.';
+        stamp.textContent = 'Failed to load trade data.';
       }
     }
 
+    // Load enacted laws
+    async function loadLaws() {
+      const stamp = document.getElementById('laws-stamp');
+      const container = document.getElementById('laws-container');
+      
+      try {
+        stamp.textContent = 'Loading enacted laws…';
+        container.innerHTML = '';
+        
+        const res = await fetch('/api/congress/enacted-laws', { cache: 'no-store' });
+        const data = await res.json();
+        
+        const count = data.count || 0;
+        const genTime = new Date(data.generated_at || Date.now()).toLocaleString();
+        stamp.textContent = `${count} enacted laws • Generated at ${genTime}`;
+        stamp.className = '';
+        
+        const laws = data.laws || [];
+        
+        if (laws.length === 0) {
+          container.innerHTML = '<p style="color:var(--muted)">No enacted laws found.</p>';
+          return;
+        }
+        
+        laws.forEach((law, idx) => {
+          const item = document.createElement('div');
+          item.className = 'law-item';
+          
+          const hasSummary = law.summary && law.summary.trim().length > 0;
+          const summaryId = `summary-${idx}`;
+          
+          item.innerHTML = `
+            <div class="law-header">
+              <span class="law-number">Public Law ${law.public_law_number || 'N/A'}</span>
+              <span class="law-date">${formatDate(law.enacted_date)}</span>
+            </div>
+            <div class="law-title">${escapeHtml(law.title)}</div>
+            <div class="law-bill">${law.bill_id}</div>
+            ${hasSummary ? `
+              <div class="law-summary-toggle" onclick="toggleSummary('${summaryId}')">
+                ▶ Show Summary
+              </div>
+              <div id="${summaryId}" class="law-summary-text">
+                ${law.summary}
+              </div>
+            ` : ''}
+          `;
+          
+          container.appendChild(item);
+        });
+        
+      } catch (e) {
+        console.error(e);
+        stamp.textContent = 'Failed to load enacted laws.';
+        stamp.className = '';
+        container.innerHTML = '<p style="color:var(--muted)">Error loading enacted laws.</p>';
+      }
+    }
+
+    function toggleSummary(id) {
+      const elem = document.getElementById(id);
+      const toggle = elem.previousElementSibling;
+      
+      if (elem.classList.contains('show')) {
+        elem.classList.remove('show');
+        toggle.textContent = '▶ Show Summary';
+      } else {
+        elem.classList.add('show');
+        toggle.textContent = '▼ Hide Summary';
+      }
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return 'N/A';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch {
+        return dateStr;
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
     document.getElementById('refreshBtn').addEventListener('click', loadData);
+    document.getElementById('refreshLawsBtn').addEventListener('click', loadLaws);
     document.getElementById('year').textContent = new Date().getFullYear();
+    
+    // Load both on page load
     loadData();
+    loadLaws();
   </script>
 </body>
 </html>
-
-<!-- deploy-fingerprint: 2025-10-14T18:43:31.0083603-05:00 -->

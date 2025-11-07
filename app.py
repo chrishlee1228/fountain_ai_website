@@ -52,6 +52,10 @@ def congress(request: Request):
 def portfolio(request: Request):
     return templates.TemplateResponse("portfolio.html", {"request": request})
 
+@app.get("/commodities", response_class=HTMLResponse)
+def commodities(request: Request):
+    return templates.TemplateResponse("commodities.html", {"request": request})
+
 @app.get("/api/ping")
 def ping():
     return {"ok": True}
@@ -344,8 +348,21 @@ CACHE_TTL = 300
 CONGRESS_LAWS_CACHE = {"laws": None, "ts": 0}
 CONGRESS_LAWS_TTL = 86400  # 24 hours
 
+from datetime import datetime
+
+"""Calculate current Congress number based on the year."""
+def get_current_congress() -> int:
+    # 119th Congress started in January 2025
+    # Each Congress lasts 2 years
+    year = datetime.now().year
+    # Congress #1 started in 1789
+    congress = ((year - 1789) // 2) + 1
+    return congress
+
 # Add this helper function for the Congress API
-async def fetch_enacted_laws_api(congress: int = 119, limit: int = 50) -> List[Dict[str, Any]]:
+async def fetch_enacted_laws_api(congress: int = None, limit: int = 50) -> List[Dict[str, Any]]:
+    if congress is None:
+        congress = get_current_congress()
     """Fetch enacted laws from Congress.gov API"""
     API_KEY = os.getenv("CONGRESS_API_KEY")
     if not API_KEY:
@@ -513,7 +530,7 @@ async def congress_enacted_laws(refresh: bool = False):
     
     try:
         # Fetch enacted laws
-        laws = await fetch_enacted_laws_api(congress=119, limit=50)
+        laws = await fetch_enacted_laws_api(congress=None, limit=50)
         
         payload = {
             "count": len(laws),
@@ -596,3 +613,74 @@ def get_fred_series(series: str, months: int = 60):
         for r in rows
     ])
 
+@app.get("/api/fred/meta/last-updated")
+def get_fred_last_updated():
+    """Get the most recent date across all FRED series"""
+    if engine is None:
+        return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=500)
+    
+    q = text('''
+        SELECT MAX(date) as last_date
+        FROM fred_all_series
+    ''')
+    
+    with engine.begin() as conn:
+        result = conn.execute(q).fetchone()
+        if result and result[0]:
+            return JSONResponse({
+                "last_updated": result[0].strftime("%Y-%m-%d"),
+                "formatted": result[0].strftime("%B %d, %Y")
+            })
+        else:
+            return JSONResponse({"error": "No data available"}, status_code=404)
+
+# =============== COMMODITIES API ==============
+try:
+    from commodities_data import COMMODITY_SERIES, INDUSTRY_IMPACTS, CATEGORIES
+except ImportError:
+    COMMODITY_SERIES = {}
+    INDUSTRY_IMPACTS = {}
+    CATEGORIES = {}
+
+@app.get("/api/commodities/metadata")
+def get_commodities_metadata():
+    """Return metadata about all tracked commodities"""
+    return JSONResponse(COMMODITY_SERIES)
+
+@app.get("/api/commodities/impacts")
+def get_commodities_impacts():
+    """Return stock impact data for commodities"""
+    return JSONResponse(INDUSTRY_IMPACTS)
+
+@app.get("/api/commodities/{series}")
+def get_commodity_series(series: str, months: int = 60):
+    """Get commodity price data for a specific series"""
+    if engine is None:
+        return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=500)
+    
+    # Check if this is a valid commodity series
+    if series not in COMMODITY_SERIES:
+        return JSONResponse({"error": f"unknown commodity series '{series}'"}, status_code=400)
+    
+    q = text(f'''
+        SELECT date, "{series}" AS value
+        FROM fred_commodities
+        WHERE "{series}" IS NOT NULL
+        ORDER BY date DESC
+        LIMIT :limit
+    ''')
+    
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(q, {"limit": months}).fetchall()
+        
+        # chronological order for chart
+        rows = list(reversed(rows))
+        return JSONResponse([
+            {"date": r[0].strftime("%Y-%m-%d"),
+             series: float(r[1]) if r[1] is not None else None}
+            for r in rows
+        ])
+    except Exception as e:
+        # Table might not exist yet
+        return JSONResponse({"error": f"Commodity data not available: {str(e)}"}, status_code=404)

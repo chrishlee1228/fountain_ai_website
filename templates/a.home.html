@@ -94,6 +94,20 @@
       margin:6px 0 10px;
       color:var(--text);
     }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .chart-header h4 {
+      margin: 0;
+    }
+    .chart-last-updated {
+      font-size: 11px;
+      color: var(--muted);
+      font-style: italic;
+    }
     .chart-scroll canvas {
       height:260px;
       width:100%;
@@ -111,6 +125,7 @@
       </div>
       <div class="tabs">
         <a href="/" class="active">Home</a>
+        <a href="/commodities">Commodities</a>
         <a href="/congress">Congress</a>
         <a href="/portfolio">My Portfolio</a>
       </div>
@@ -173,13 +188,19 @@
       { id: "Job_Openings_JOLTS",       label: "Job Openings (JOLTS)" }
     ];
 
-    const MONTHS = 12; // 
+    const MONTHS = 12;
     const container = document.getElementById("macroCharts");
 
     for (const s of seriesList) {
       const card = document.createElement("div");
       card.className = "chart-card";
-      card.innerHTML = `<h4>${s.label}</h4><div class="chart-scroll"><canvas id="${s.id}"></canvas></div>`;
+      card.innerHTML = `
+        <div class="chart-header">
+          <h4>${s.label}</h4>
+          <div class="chart-last-updated" id="last-${s.id}">Loading...</div>
+        </div>
+        <div class="chart-scroll"><canvas id="${s.id}"></canvas></div>
+      `;
       container.appendChild(card);
 
       try {
@@ -187,6 +208,35 @@
         const data = await res.json();
         const labels = data.map(d => d.date);
         const values = data.map(d => d[s.id]);
+
+        // Find the last date where the value actually changed
+        let lastChangeDate = labels[labels.length - 1];
+        if (values.length > 1) {
+          const lastValue = values[values.length - 1];
+          // Search backwards for when the value was different
+          for (let i = values.length - 2; i >= 0; i--) {
+            if (values[i] !== lastValue) {
+              lastChangeDate = labels[i + 1];
+              break;
+            }
+            // If we've gone all the way back, use the first date
+            if (i === 0) {
+              lastChangeDate = labels[0];
+            }
+          }
+        }
+
+        const lastDateElem = document.getElementById(`last-${s.id}`);
+        if (lastChangeDate) {
+          const formatted = new Date(lastChangeDate).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric' 
+          });
+          lastDateElem.textContent = `As of ${formatted}`;
+        } else {
+          lastDateElem.textContent = '';
+        }
 
         const ctx = document.getElementById(s.id).getContext("2d");
         new Chart(ctx, {
@@ -228,7 +278,10 @@
       }
     }
   }
-  window.addEventListener("DOMContentLoaded", drawMacroCharts);
+  
+  window.addEventListener("DOMContentLoaded", () => {
+    drawMacroCharts();
+  });
   </script>
 </body>
 </html>

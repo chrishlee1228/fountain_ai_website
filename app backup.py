@@ -10,6 +10,9 @@ try:
 except Exception:
     pass
 
+import httpx
+from typing import List, Dict, Any
+
 import os, time, asyncio, re
 from datetime import datetime
 from functools import lru_cache
@@ -334,20 +337,123 @@ def sec_filings_browse_batch(
 # ================== Congress scraping trades ==================
 WEEK_SECONDS = 7 * 24 * 60 * 60
 
-@app.on_event("startup")
-async def schedule_weekly_refresh():
-    async def loop_refresh():
-        try: _refresh_congress_cache()
-        except Exception as e: print("Initial refresh failed:", repr(e))
-        while True:
-            await asyncio.sleep(WEEK_SECONDS)
-            try: _refresh_congress_cache(); print("Weekly refresh completed")
-            except Exception as e: print("Weekly refresh failed:", repr(e))
-    asyncio.create_task(loop_refresh())
-
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 CACHE = {"congress": None, "ts": 0}
 CACHE_TTL = 300
+
+CONGRESS_LAWS_CACHE = {"laws": None, "ts": 0}
+CONGRESS_LAWS_TTL = 86400  # 24 hours
+
+from datetime import datetime
+
+"""Calculate current Congress number based on the year."""
+def get_current_congress() -> int:
+    # 119th Congress started in January 2025
+    # Each Congress lasts 2 years
+    year = datetime.now().year
+    # Congress #1 started in 1789
+    congress = ((year - 1789) // 2) + 1
+    return congress
+
+# Add this helper function for the Congress API
+async def fetch_enacted_laws_api(congress: int = None, limit: int = 50) -> List[Dict[str, Any]]:
+    if congress is None:
+        congress = get_current_congress()
+    """Fetch enacted laws from Congress.gov API"""
+    API_KEY = os.getenv("CONGRESS_API_KEY")
+    if not API_KEY:
+        raise RuntimeError("CONGRESS_API_KEY not found in environment")
+    
+    BASE = "https://api.congress.gov/v3"
+    results = []
+    
+    async with httpx.AsyncClient() as client:
+        # Fetch from /law endpoint
+        url = f"{BASE}/law/{congress}"
+        params = {"api_key": API_KEY, "format": "json", "limit": 250}
+        
+        response = await client.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        bills = data.get("bills", [])
+        for row in bills[:limit]:
+            latest = row.get("latestAction") or {}
+            laws = row.get("laws", [])
+            law_info = laws[0] if laws else {}
+            
+            bill_type = row.get("type", "").lower()
+            bill_number = row.get("number")
+            
+            # Fetch summary for this bill
+            summary = ""
+            try:
+                summary_url = f"{BASE}/bill/{congress}/{bill_type}/{bill_number}/summaries"
+                summary_params = {"api_key": API_KEY, "format": "json"}
+                sum_response = await client.get(summary_url, params=summary_params, timeout=20)
+                sum_response.raise_for_status()
+                sum_data = sum_response.json()
+                summaries = sum_data.get("summaries", [])
+                if summaries:
+                    summary = (summaries[0].get("text") or "").strip()
+            except Exception as e:
+                print(f"Could not fetch summary for {bill_type} {bill_number}: {e}")
+            
+            results.append({
+                "bill_id": f"{row.get('type')} {bill_number}",
+                "congress": row.get("congress"),
+                "title": (row.get("title") or "").strip(),
+                "public_law_number": law_info.get("number"),
+                "law_type": law_info.get("type"),
+                "enacted_date": latest.get("actionDate"),
+                "latest_action": latest.get("text"),
+                "summary": summary,
+                "bill_url": row.get("url"),
+            })
+    
+    return results
+
+# Modify your existing schedule_weekly_refresh function:
+@app.on_event("startup")
+async def schedule_weekly_refresh():
+    async def loop_refresh():
+        # Initial refresh for congress trades
+        try: _refresh_congress_cache()
+        except Exception as e: print("Initial congress trades refresh failed:", repr(e))
+        
+        # Initial refresh for enacted laws
+        try: 
+            await fetch_enacted_laws_api()
+            print("Initial enacted laws refresh completed")
+        except Exception as e: 
+            print("Initial enacted laws refresh failed:", repr(e))
+        
+        while True:
+            await asyncio.sleep(WEEK_SECONDS)
+            
+            # Refresh congress trades
+            try: 
+                _refresh_congress_cache()
+                print("Weekly congress trades refresh completed")
+            except Exception as e: 
+                print("Weekly congress trades refresh failed:", repr(e))
+            
+            # Refresh enacted laws
+            try:
+                laws = await fetch_enacted_laws_api()
+                CONGRESS_LAWS_CACHE.update(
+                    laws={
+                        "count": len(laws),
+                        "laws": laws,
+                        "generated_at": datetime.utcnow().isoformat() + "Z"
+                    },
+                    ts=time.time()
+                )
+                print("Weekly enacted laws refresh completed")
+            except Exception as e:
+                print("Weekly enacted laws refresh failed:", repr(e))
+    
+    asyncio.create_task(loop_refresh())
 
 def _get_table(url: str) -> pd.DataFrame:
     r = requests.get(url, headers=HEADERS, timeout=20); r.raise_for_status()
@@ -407,6 +513,38 @@ def congress_top_bottom():
     payload["generated_at"] = datetime.utcnow().isoformat() + "Z"
     CACHE.update(congress=payload, ts=now)
     return payload
+
+# Add this endpoint to fetch and cache enacted laws
+@app.get("/api/congress/enacted-laws")
+async def congress_enacted_laws(refresh: bool = False):
+    """Get enacted laws from current congress with summaries"""
+    now = time.time()
+    
+    # Return cached data if available and not forcing refresh
+    if not refresh and CONGRESS_LAWS_CACHE["laws"] and now - CONGRESS_LAWS_CACHE["ts"] < CONGRESS_LAWS_TTL:
+        return CONGRESS_LAWS_CACHE["laws"]
+    
+    try:
+        # Fetch enacted laws
+        laws = await fetch_enacted_laws_api(congress=None, limit=50)
+        
+        payload = {
+            "count": len(laws),
+            "laws": laws,
+            "generated_at": datetime.utcnow().isoformat() + "Z"
+        }
+        
+        # Update cache
+        CONGRESS_LAWS_CACHE.update(laws=payload, ts=now)
+        
+        return payload
+    except Exception as e:
+        print(f"Error fetching enacted laws: {e}")
+        # Return cached data if available, even if stale
+        if CONGRESS_LAWS_CACHE["laws"]:
+            return CONGRESS_LAWS_CACHE["laws"]
+        raise HTTPException(status_code=500, detail=f"Failed to fetch enacted laws: {str(e)}")
+
 
 # ================= Portfolio APIs =================
 @app.get("/api/news")
@@ -470,3 +608,24 @@ def get_fred_series(series: str, months: int = 60):
          series: float(r[1]) if r[1] is not None else None}
         for r in rows
     ])
+
+@app.get("/api/fred/meta/last-updated")
+def get_fred_last_updated():
+    """Get the most recent date across all FRED series"""
+    if engine is None:
+        return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=500)
+    
+    q = text('''
+        SELECT MAX(date) as last_date
+        FROM fred_all_series
+    ''')
+    
+    with engine.begin() as conn:
+        result = conn.execute(q).fetchone()
+        if result and result[0]:
+            return JSONResponse({
+                "last_updated": result[0].strftime("%Y-%m-%d"),
+                "formatted": result[0].strftime("%B %d, %Y")
+            })
+        else:
+            return JSONResponse({"error": "No data available"}, status_code=404)

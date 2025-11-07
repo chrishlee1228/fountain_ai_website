@@ -176,9 +176,6 @@ def main():
     print("✨ Data fetch complete!")
     print("="*60 + "\n")
 
-if __name__ == "__main__":
-    main()
-
     os.environ["FRED_API_KEY"] = fred_key
     engine = create_engine(db_url, pool_pre_ping=True)
 
